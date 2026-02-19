@@ -1,7 +1,7 @@
 {
-  "name": "ui-component",
+  "name": "@kimminhyeock/ui-component",
   "github": "https://github.com/kimminhyug/ui-component",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",

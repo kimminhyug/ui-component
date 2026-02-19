@@ -9,7 +9,7 @@ export type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'dang
 export interface BadgeProps
   extends Omit<HTMLAttributes<HTMLSpanElement>, 'className'>, Stylable, ThemedComponent {
   variant?: BadgeVariant;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export const Badge = ({

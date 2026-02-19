@@ -30,7 +30,7 @@ const defaultThemes: ThemeRegistry = { default: {} };
 export interface ThemeProviderProps {
   themes?: ThemeRegistry;
   defaultThemeKey?: string;
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 export const ThemeProvider = ({
