@@ -1,7 +1,7 @@
 {
   "name": "@kimminhyeock/ui-component",
   "github": "https://github.com/kimminhyug/ui-component",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -31,7 +31,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\" \".storybook/**/*.{ts,tsx,js,jsx,json,css}\"",
     "test": "vitest",
     "test:run": "vitest run",
-    "postinstall": "npm run build",
+    "postinstall": "npx tsup",
     "prepublishOnly": "npm run build"
   },
   "publishConfig": {
