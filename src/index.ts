@@ -36,6 +36,7 @@ export {
   DataTableHead,
   EditableTable,
   EditableCell,
+  ExcelGrid,
 } from './components/molecules';
 export type {
   ModalProps,
@@ -56,6 +57,9 @@ export type {
   EditType,
   EditOption,
   EditableColumnMeta,
+  ExcelGridProps,
+  ExcelGridColumnDef,
+  ExcelGridRowData,
 } from './components/molecules';
 
 export { cn } from './utils';

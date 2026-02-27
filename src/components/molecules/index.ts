@@ -18,3 +18,5 @@ export type {
   EditOption,
   EditableColumnMeta,
 } from './EditableTable';
+export { ExcelGrid } from './ExcelGrid';
+export type { ExcelGridProps, ColumnDef as ExcelGridColumnDef, RowData as ExcelGridRowData } from './ExcelGrid';

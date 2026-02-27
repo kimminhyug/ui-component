@@ -4,7 +4,7 @@ export { I18nProvider, MessageMap, UIMessages, baseMessages, mergeMessages, useI
 import * as react from 'react';
 import react__default, { ButtonHTMLAttributes, InputHTMLAttributes, HTMLAttributes, ReactNode, CSSProperties } from 'react';
 import * as react_jsx_runtime from 'react/jsx-runtime';
-import { Table, Row, ColumnDef, CellContext, RowSelectionState, SortingState, useReactTable } from '@tanstack/react-table';
+import { Table, Row, ColumnDef as ColumnDef$1, CellContext, RowSelectionState, SortingState, useReactTable } from '@tanstack/react-table';
 import { ClassValue } from 'clsx';
 
 type ControlledProps<T> = {
@@ -116,7 +116,7 @@ interface DataTableProps<TData> extends Stylable, ThemedComponent {
     /** 테이블 데이터 */
     data: TData[];
     /** 컬럼 정의 (TanStack Table ColumnDef). cell로 버튼/아이콘/링크 등 커스텀 렌더링 가능 */
-    columns: ColumnDef<TData, any>[];
+    columns: ColumnDef$1<TData, any>[];
     /** 행 선택(체크박스) 사용 여부 */
     selectable?: boolean;
     /** 컬럼 클릭 정렬 사용 여부 */
@@ -146,7 +146,7 @@ interface EditableTableProps<TData> extends Stylable, ThemedComponent {
     /** 테이블 데이터 (폼 초기값으로 사용) */
     data: TData[];
     /** 컬럼 정의. meta.editType으로 셀 편집 타입 지정 (text | number | date | checkbox | dropdown) */
-    columns: ColumnDef<TData, any>[];
+    columns: ColumnDef$1<TData, any>[];
     /** 폼 제출 시 콜백 (편집된 rows 전달) */
     onSubmit?: (data: {
         rows: TData[];
@@ -187,6 +187,78 @@ interface EditableCellProps<TData, TValue> {
     theme: Record<string, string>;
 }
 declare const EditableCell: <TData, TValue>({ cell, editType, editOptions, theme, }: EditableCellProps<TData, TValue>) => react_jsx_runtime.JSX.Element;
+
+/** 셀 에디터 타입 */
+type CellEditorType = 'text' | 'datetime' | 'dropdown';
+interface ColumnDef<T = unknown> {
+    /** 컬럼 식별자 (row[key] 접근용) */
+    field: string;
+    /** 헤더 표시 텍스트 */
+    header?: string;
+    /** 셀 너비 (px 또는 확장용) */
+    width?: number;
+    /** 편집 가능 여부 (editable=true일 때 개별 오버라이드) */
+    editable?: boolean;
+    /** 컬럼 고정: 'left' 왼쪽 스티키, 'right' 오른쪽 스티키 (가로 스크롤 시 고정) */
+    pinned?: 'left' | 'right';
+    /** 편집 시 에디터 타입. 기본 'text' */
+    editor?: CellEditorType;
+    /** editor: 'dropdown' 일 때 옵션 목록 */
+    dropdownOptions?: string[];
+}
+type RowData = Record<string, unknown>;
+interface PaginationOptions {
+    pageSize: number;
+    page?: number;
+    onPageChange?: (page: number) => void;
+}
+interface ExcelGridProps {
+    columns: ColumnDef[];
+    rows: RowData[];
+    editable?: boolean;
+    selection?: boolean;
+    /** 행 단위 체크박스 선택 컬럼 표시 */
+    checkboxSelection?: boolean;
+    /** 다중 행 선택: Ctrl+클릭(토글), Shift+클릭(범위 선택). selection 또는 checkboxSelection과 함께 사용 */
+    multiSelect?: boolean;
+    /** 체크박스 선택 변경 시 (선택된 행 인덱스) */
+    onSelectionChange?: (selectedRowIndices: number[]) => void;
+    /** 컬럼 헤더 클릭 정렬 사용 */
+    sortable?: boolean;
+    /** 검색 입력 표시(상단), placeholder */
+    searchPlaceholder?: string;
+    /** 컬럼 헤더 필터 사용 */
+    columnFilter?: boolean;
+    /** 컬럼 드래그로 순서 변경 */
+    columnReorder?: boolean;
+    /** 페이징. pageSize 필수, page/onPageChange로 제어 */
+    pagination?: PaginationOptions;
+    /** 가상 스크롤 (rowHeight px 고정, tbody만 스크롤·헤더 고정) */
+    virtualScroll?: {
+        rowHeight: number;
+        maxHeight?: number;
+    };
+    /** 상단 고정 행 개수 (y축 pinned) */
+    pinnedRowCount?: number;
+    /** 행 grab(잡기) 가능 — 행을 잡아 다른 그리드로 드래그 시 대상 그리드 onDropRows 호출 */
+    rowDraggable?: boolean;
+    /** 다른 그리드에서 행을 이 그리드로 드롭했을 때 (추가할 행) */
+    onDropRows?: (rows: RowData[]) => void;
+    /** 행 추가 버튼 노출 시 클릭 시 호출 (호출 측에서 rows 상태에 행 추가) */
+    onAddRow?: () => void;
+    /** Export 시 파일명. 설정 시 내보내기 버튼 노출 */
+    exportFileName?: string;
+    /** Export/Import 구분자. 기본 ',' */
+    exportImportDelimiter?: string;
+    /** Import 완료 시 (파싱된 rows) */
+    onImport?: (rows: RowData[]) => void;
+    onChange?: (rowIndex: number, colIndex: number, value: unknown) => void;
+    className?: string;
+    style?: React.CSSProperties;
+}
+
+/** Public API: 단일 컴포넌트. 로직 없음, 초기화 + 조합만. */
+declare const ExcelGrid: ({ columns, rows, editable, selection, checkboxSelection, multiSelect, onSelectionChange, sortable, searchPlaceholder, columnFilter, columnReorder, pagination, virtualScroll, pinnedRowCount, rowDraggable, onDropRows, onAddRow, exportFileName, exportImportDelimiter, onImport, onChange, className, style, }: ExcelGridProps) => react_jsx_runtime.JSX.Element;
 
 declare const cn: (...inputs: ClassValue[]) => string;
 
@@ -233,6 +305,6 @@ interface UseDataTableReturn<TData> {
     getRowStyle?: (row: Row<TData>) => React.CSSProperties | undefined;
     pagination: UseDataTablePaginationState | null;
 }
-declare const useDataTable: <TData>(data: TData[], columns: ColumnDef<TData, any>[], options?: UseDataTableOptions<TData>) => UseDataTableReturn<TData>;
+declare const useDataTable: <TData>(data: TData[], columns: ColumnDef$1<TData, any>[], options?: UseDataTableOptions<TData>) => UseDataTableReturn<TData>;
 
-export { Badge, type BadgeProps, type BadgeVariant, Button, type ButtonProps, type ButtonSize, type ButtonVariant, Checkbox, type CheckboxProps, ComponentTheme, type ControlledProps, DataTable, DataTableHead, type DataTableHeadProps, type DataTableProps, type DataTableScrollOptions, Dropdown, type DropdownItem, type DropdownProps, type EditOption, type EditType, EditableCell, type EditableCellProps, type EditableColumnMeta, EditableTable, type EditableTableProps, Input, type InputProps, Modal, type ModalProps, type Stylable, type TabItem, TableRoot as Table, TableBody, type TableBodyProps, type TableContextValue, TableHead, type TableHeadProps, type TableProps, Tabs, type TabsProps, type ThemedComponent, type UseDataTableOptions, type UseDataTablePaginationState, type UseDataTableReturn, type UseDisclosureReturn, cn, useDataTable, useDisclosure, useTableContext };
+export { Badge, type BadgeProps, type BadgeVariant, Button, type ButtonProps, type ButtonSize, type ButtonVariant, Checkbox, type CheckboxProps, ComponentTheme, type ControlledProps, DataTable, DataTableHead, type DataTableHeadProps, type DataTableProps, type DataTableScrollOptions, Dropdown, type DropdownItem, type DropdownProps, type EditOption, type EditType, EditableCell, type EditableCellProps, type EditableColumnMeta, EditableTable, type EditableTableProps, ExcelGrid, type ColumnDef as ExcelGridColumnDef, type ExcelGridProps, type RowData as ExcelGridRowData, Input, type InputProps, Modal, type ModalProps, type Stylable, type TabItem, TableRoot as Table, TableBody, type TableBodyProps, type TableContextValue, TableHead, type TableHeadProps, type TableProps, Tabs, type TabsProps, type ThemedComponent, type UseDataTableOptions, type UseDataTablePaginationState, type UseDataTableReturn, type UseDisclosureReturn, cn, useDataTable, useDisclosure, useTableContext };

@@ -1150,13 +1150,1499 @@ var EditableTable = /* @__PURE__ */ __name(({
   ) });
 }, "EditableTable");
 
+// src/components/molecules/ExcelGrid/ExcelGridContext.tsx
+import { createContext as createContext4, useContext as useContext4, useRef as useRef2, useEffect as useEffect2, useCallback as useCallback2, useMemo as useMemo5 } from "react";
+import { useSyncExternalStore } from "react";
+
+// src/components/molecules/ExcelGrid/state/gridStore.ts
+var CHECKBOX_COLUMN = {
+  field: "__checkbox__",
+  header: "",
+  width: 40
+};
+var DRAG_HANDLE_COLUMN = {
+  field: "__drag__",
+  header: "",
+  width: 28
+};
+var createGridStore = /* @__PURE__ */ __name(() => {
+  let state = {
+    rows: [],
+    columns: [],
+    focusedCell: null,
+    selectedRange: null,
+    editingCell: null,
+    selectedRowIndices: [],
+    sortBy: null,
+    searchText: "",
+    columnFilters: {},
+    columnOrder: []
+  };
+  const listeners = /* @__PURE__ */ new Set();
+  const emit = /* @__PURE__ */ __name(() => {
+    listeners.forEach((l) => l());
+  }, "emit");
+  return {
+    getState: /* @__PURE__ */ __name(() => state, "getState"),
+    setState: /* @__PURE__ */ __name((partial) => {
+      state = { ...state, ...partial };
+      emit();
+    }, "setState"),
+    subscribe: /* @__PURE__ */ __name((listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }, "subscribe"),
+    initStore: /* @__PURE__ */ __name((rows, columns, options = {}) => {
+      const withCheckbox = options.checkboxSelection === true ? [CHECKBOX_COLUMN, ...columns] : columns;
+      const displayColumns = options.rowDraggable === true ? [DRAG_HANDLE_COLUMN, ...withCheckbox] : withCheckbox;
+      const dataLen = options.checkboxSelection ? columns.length : columns.length;
+      const columnOrder = Array.from({ length: dataLen }, (_, i) => i);
+      state = {
+        rows: [...rows],
+        columns: displayColumns,
+        focusedCell: null,
+        selectedRange: null,
+        editingCell: null,
+        selectedRowIndices: [],
+        sortBy: null,
+        searchText: "",
+        columnFilters: {},
+        columnOrder
+      };
+      emit();
+    }, "initStore"),
+    getColumnOrder: /* @__PURE__ */ __name(() => state.columnOrder, "getColumnOrder"),
+    setColumnOrder: /* @__PURE__ */ __name((order) => {
+      state = { ...state, columnOrder: order };
+      emit();
+    }, "setColumnOrder"),
+    setColumnFilter: /* @__PURE__ */ __name((colIndex, value) => {
+      const next = { ...state.columnFilters, [colIndex]: value };
+      if (!value.trim()) delete next[colIndex];
+      state = { ...state, columnFilters: next };
+      emit();
+    }, "setColumnFilter"),
+    setSortBy: /* @__PURE__ */ __name((col, dir) => {
+      state = { ...state, sortBy: { col, dir } };
+      emit();
+    }, "setSortBy"),
+    clearSort: /* @__PURE__ */ __name(() => {
+      state = { ...state, sortBy: null };
+      emit();
+    }, "clearSort"),
+    setSearchText: /* @__PURE__ */ __name((text) => {
+      state = { ...state, searchText: text };
+      emit();
+    }, "setSearchText"),
+    setRows: /* @__PURE__ */ __name((rows) => {
+      state = { ...state, rows: [...rows] };
+      emit();
+    }, "setRows"),
+    toggleRowSelection: /* @__PURE__ */ __name((rowIndex) => {
+      const set = new Set(state.selectedRowIndices);
+      if (set.has(rowIndex)) set.delete(rowIndex);
+      else set.add(rowIndex);
+      state = { ...state, selectedRowIndices: Array.from(set) };
+      emit();
+    }, "toggleRowSelection"),
+    toggleAllRowsSelection: /* @__PURE__ */ __name((displayedRowCount) => {
+      const current = state.selectedRowIndices.length;
+      const allSelected = current === displayedRowCount && displayedRowCount > 0;
+      state = {
+        ...state,
+        selectedRowIndices: allSelected ? [] : Array.from({ length: displayedRowCount }, (_, i) => i)
+      };
+      emit();
+    }, "toggleAllRowsSelection"),
+    setSelectedRowIndices: /* @__PURE__ */ __name((indices) => {
+      state = { ...state, selectedRowIndices: [...indices] };
+      emit();
+    }, "setSelectedRowIndices")
+  };
+}, "createGridStore");
+
+// src/components/molecules/ExcelGrid/ExcelGridContext.tsx
+import { jsx as jsx18 } from "react/jsx-runtime";
+var ExcelGridContext = createContext4(null);
+var useExcelGridState = /* @__PURE__ */ __name(() => {
+  const ctx = useContext4(ExcelGridContext);
+  if (!ctx) throw new Error("ExcelGrid subcomponents must be used within ExcelGrid.");
+  return ctx.state;
+}, "useExcelGridState");
+var useExcelGridRef = /* @__PURE__ */ __name(() => {
+  const ctx = useContext4(ExcelGridContext);
+  if (!ctx) throw new Error("ExcelGrid subcomponents must be used within ExcelGrid.");
+  return ctx.gridRef;
+}, "useExcelGridRef");
+var useExcelGridOptions = /* @__PURE__ */ __name(() => {
+  const ctx = useContext4(ExcelGridContext);
+  if (!ctx) throw new Error("ExcelGrid subcomponents must be used within ExcelGrid.");
+  return ctx;
+}, "useExcelGridOptions");
+var useExcelGridOriginalRowIndexRef = /* @__PURE__ */ __name(() => {
+  const ctx = useContext4(ExcelGridContext);
+  if (!ctx) throw new Error("ExcelGrid subcomponents must be used within ExcelGrid.");
+  return ctx.getOriginalRowIndexRef;
+}, "useExcelGridOriginalRowIndexRef");
+var ExcelGridProvider = /* @__PURE__ */ __name(({
+  rows,
+  columns,
+  editable = false,
+  checkboxSelection = false,
+  onSelectionChange,
+  sortable = false,
+  searchPlaceholder,
+  columnFilter = false,
+  columnReorder = false,
+  pagination,
+  virtualScroll,
+  pinnedRowCount = 0,
+  multiSelect = false,
+  rowDraggable = false,
+  onDropRows,
+  onAddRow,
+  exportFileName,
+  exportImportDelimiter = ",",
+  onImport,
+  onChange,
+  children
+}) => {
+  const gridRef = useRef2(null);
+  const getOriginalRowIndexRef = useRef2(null);
+  const storeRef = useRef2(null);
+  if (!storeRef.current) storeRef.current = createGridStore();
+  const store = storeRef.current;
+  const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  useEffect2(() => {
+    store.initStore(rows, columns, { checkboxSelection, rowDraggable });
+  }, [rows, columns, checkboxSelection, rowDraggable, store]);
+  const getEditingValue = useCallback2(() => {
+    const root = gridRef.current;
+    const s = store.getState();
+    const ec = s.editingCell;
+    if (!root || !ec) return void 0;
+    const sel = `[data-row="${ec.row}"][data-col="${ec.col}"]`;
+    const input = root.querySelector(`input${sel}`);
+    if (input) return input.value;
+    const selectEl = root.querySelector(`select${sel}`);
+    return selectEl?.value;
+  }, [store]);
+  const getOriginalRowIndex = useCallback2((i) => getOriginalRowIndexRef.current?.(i) ?? i, []);
+  useEffect2(() => {
+    onSelectionChange?.(state.selectedRowIndices);
+  }, [state.selectedRowIndices, onSelectionChange]);
+  const value = useMemo5(
+    () => ({
+      state,
+      store,
+      gridRef,
+      getOriginalRowIndexRef,
+      getEditingValue,
+      editable: !!editable,
+      onChange,
+      sortable,
+      searchPlaceholder,
+      columnFilter,
+      columnReorder,
+      pagination,
+      virtualScroll,
+      pinnedRowCount,
+      multiSelect,
+      rowDraggable,
+      onDropRows,
+      onAddRow,
+      exportFileName,
+      exportImportDelimiter,
+      onImport
+    }),
+    [
+      state,
+      store,
+      getEditingValue,
+      editable,
+      onChange,
+      sortable,
+      searchPlaceholder,
+      columnFilter,
+      columnReorder,
+      pagination,
+      virtualScroll,
+      pinnedRowCount,
+      multiSelect,
+      rowDraggable,
+      onDropRows,
+      onAddRow,
+      exportFileName,
+      exportImportDelimiter,
+      onImport
+    ]
+  );
+  return /* @__PURE__ */ jsx18(ExcelGridContext.Provider, { value, children });
+}, "ExcelGridProvider");
+
+// src/components/molecules/ExcelGrid/ExcelGridInner.tsx
+import { useEffect as useEffect3, useMemo as useMemo6, useCallback as useCallback3, useState as useState3, useRef as useRef3 } from "react";
+
+// src/components/molecules/ExcelGrid/core/GridRoot.tsx
+import { jsx as jsx19 } from "react/jsx-runtime";
+var GridRoot = /* @__PURE__ */ __name(({ children, className, style }) => /* @__PURE__ */ jsx19("div", { className: cn("w-full overflow-auto", className), style, children }), "GridRoot");
+
+// src/components/molecules/ExcelGrid/core/GridViewport.tsx
+import { forwardRef as forwardRef4 } from "react";
+import { jsx as jsx20 } from "react/jsx-runtime";
+var GridViewport = forwardRef4(
+  ({
+    children,
+    onKeyDown,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onDoubleClick,
+    className,
+    style
+  }, ref) => /* @__PURE__ */ jsx20(
+    "div",
+    {
+      ref,
+      className,
+      style,
+      role: "grid",
+      tabIndex: 0,
+      draggable: false,
+      onDragStart: (e) => e.preventDefault(),
+      onKeyDown,
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onDoubleClick,
+      children
+    }
+  )
+);
+GridViewport.displayName = "GridViewport";
+
+// src/components/molecules/ExcelGrid/core/GridCell.tsx
+import { jsx as jsx21, jsxs as jsxs8 } from "react/jsx-runtime";
+var GridCell = /* @__PURE__ */ __name(({
+  value,
+  focused,
+  selected,
+  editing,
+  rowIndex,
+  colIndex,
+  width,
+  editor = "text",
+  dropdownOptions = [],
+  pinnedStyle,
+  className
+}) => {
+  const displayValue = value == null ? "" : String(value);
+  const dataAttrs = { "data-row": rowIndex, "data-col": colIndex };
+  const inputClass = "w-full min-w-0 border-0 bg-transparent px-0 py-0 text-sm outline-none";
+  const renderEditor = /* @__PURE__ */ __name(() => {
+    if (editor === "datetime") {
+      const iso = displayValue ? new Date(displayValue).toISOString().slice(0, 16) : "";
+      return /* @__PURE__ */ jsx21(
+        "input",
+        {
+          type: "datetime-local",
+          defaultValue: iso,
+          className: inputClass,
+          ...dataAttrs,
+          "aria-label": `Cell ${rowIndex} ${colIndex}`
+        }
+      );
+    }
+    if (editor === "dropdown" && dropdownOptions.length > 0) {
+      return /* @__PURE__ */ jsxs8(
+        "select",
+        {
+          defaultValue: displayValue,
+          className: inputClass,
+          ...dataAttrs,
+          "aria-label": `Cell ${rowIndex} ${colIndex}`,
+          children: [
+            /* @__PURE__ */ jsx21("option", { value: "", children: "\uC120\uD0DD" }),
+            dropdownOptions.map((opt) => /* @__PURE__ */ jsx21("option", { value: opt, children: opt }, opt))
+          ]
+        }
+      );
+    }
+    return /* @__PURE__ */ jsx21(
+      "input",
+      {
+        type: "text",
+        defaultValue: displayValue,
+        className: inputClass,
+        ...dataAttrs,
+        "aria-label": `Cell ${rowIndex} ${colIndex}`
+      }
+    );
+  }, "renderEditor");
+  return /* @__PURE__ */ jsx21(
+    "td",
+    {
+      role: "gridcell",
+      "data-row": rowIndex,
+      "data-col": colIndex,
+      className: cn(
+        "border-b border-r border-gray-200 px-2 py-1 text-sm outline-none",
+        selected && "bg-blue-100 ring-1 ring-blue-300 ring-inset",
+        focused && "ring-2 ring-blue-500 ring-inset z-[1]",
+        className
+      ),
+      style: {
+        ...width != null ? { width: `${width}px`, minWidth: `${width}px` } : {},
+        ...pinnedStyle
+      },
+      children: editing ? renderEditor() : displayValue
+    }
+  );
+}, "GridCell");
+
+// src/components/molecules/ExcelGrid/model/rangeModel.ts
+var isCellInRange = /* @__PURE__ */ __name((row, col, range) => {
+  const rMin = Math.min(range.start.row, range.end.row);
+  const rMax = Math.max(range.start.row, range.end.row);
+  const cMin = Math.min(range.start.col, range.end.col);
+  const cMax = Math.max(range.start.col, range.end.col);
+  return row >= rMin && row <= rMax && col >= cMin && col <= cMax;
+}, "isCellInRange");
+
+// src/components/molecules/ExcelGrid/model/columnModel.ts
+var DEFAULT_COL_WIDTH = 100;
+var getPinnedOffset = /* @__PURE__ */ __name((columns, colIndex, side) => {
+  const col = columns[colIndex];
+  if (!col || col.pinned !== side) return 0;
+  const w = /* @__PURE__ */ __name((i) => columns[i]?.width ?? DEFAULT_COL_WIDTH, "w");
+  if (side === "left") {
+    let sum2 = 0;
+    for (let i = 0; i < colIndex; i++) if (columns[i]?.pinned === "left") sum2 += w(i);
+    return sum2;
+  }
+  let sum = 0;
+  for (let i = colIndex + 1; i < columns.length; i++) if (columns[i]?.pinned === "right") sum += w(i);
+  return sum;
+}, "getPinnedOffset");
+var getColumnByIndex = /* @__PURE__ */ __name((columns, colIndex) => columns[colIndex], "getColumnByIndex");
+var clampColIndex = /* @__PURE__ */ __name((columns, col) => Math.max(0, Math.min(col, columns.length - 1)), "clampColIndex");
+var getDisplayColumns = /* @__PURE__ */ __name((columns, columnOrder) => {
+  const hasDrag = columns[0]?.field === "__drag__";
+  const hasCheckbox = columns[hasDrag ? 1 : 0]?.field === "__checkbox__";
+  const dataStart = (hasDrag ? 1 : 0) + (hasCheckbox ? 1 : 0);
+  const dataCols = columns.slice(dataStart);
+  if (columnOrder.length === 0 || columnOrder.length !== dataCols.length) {
+    return columns;
+  }
+  const reordered = columnOrder.map((i) => dataCols[i]).filter(Boolean);
+  const left = reordered.filter((c) => c.pinned === "left");
+  const center = reordered.filter((c) => c.pinned !== "left" && c.pinned !== "right");
+  const right = reordered.filter((c) => c.pinned === "right");
+  const ordered = [...left, ...center, ...right];
+  const prefix = [...hasDrag ? [columns[0]] : [], ...hasCheckbox ? [columns[hasDrag ? 1 : 0]] : []];
+  return [...prefix, ...ordered];
+}, "getDisplayColumns");
+
+// src/components/molecules/ExcelGrid/utils/dragPreview.ts
+var MAX_PREVIEW_COLS = 4;
+var MAX_PREVIEW_ROWS = 5;
+var createDragPreview = /* @__PURE__ */ __name((rows, columns, dt) => {
+  const dataCols = columns.filter((c) => c.field !== "__checkbox__" && c.field !== "__drag__").slice(0, MAX_PREVIEW_COLS);
+  if (dataCols.length === 0) return;
+  const el = document.createElement("div");
+  el.setAttribute("role", "presentation");
+  el.style.cssText = [
+    "position:absolute;top:-9999px;left:-9999px;",
+    "padding:0;min-width:80px;max-width:320px;max-height:200px;overflow:hidden;",
+    "background:white;border:1px solid #e5e7eb;border-radius:6px;",
+    "box-shadow:0 4px 12px rgba(0,0,0,0.15);",
+    "font-size:11px;color:#374151;",
+    "pointer-events:none;z-index:9999;"
+  ].join("");
+  const table = document.createElement("table");
+  table.style.cssText = "border-collapse:collapse;width:100%;table-layout:fixed;";
+  table.setAttribute("role", "presentation");
+  const thead = document.createElement("thead");
+  thead.style.background = "#f3f4f6";
+  const headerRow = document.createElement("tr");
+  dataCols.forEach((col) => {
+    const th = document.createElement("th");
+    th.style.cssText = "padding:4px 6px;text-align:left;border-bottom:1px solid #e5e7eb;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;";
+    th.textContent = col.header ?? col.field;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  const previewRows = rows.slice(0, MAX_PREVIEW_ROWS);
+  previewRows.forEach((row) => {
+    const tr = document.createElement("tr");
+    dataCols.forEach((col) => {
+      const td = document.createElement("td");
+      td.style.cssText = "padding:4px 6px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;";
+      const val = row[col.field];
+      td.textContent = val != null ? String(val) : "";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  el.appendChild(table);
+  if (rows.length > MAX_PREVIEW_ROWS) {
+    const footer = document.createElement("div");
+    footer.style.cssText = "padding:2px 6px;background:#f9fafb;font-size:10px;color:#6b7280;";
+    footer.textContent = `\uC678 ${rows.length - MAX_PREVIEW_ROWS}\uD589`;
+    el.appendChild(footer);
+  }
+  document.body.appendChild(el);
+  dt.setDragImage(el, 24, 16);
+  requestAnimationFrame(() => el.remove());
+}, "createDragPreview");
+
+// src/components/molecules/ExcelGrid/core/GridRow.tsx
+import { jsx as jsx22 } from "react/jsx-runtime";
+var EXCEL_GRID_ROWS_TYPE = "application/x-excelgrid-rows";
+var GridRow = /* @__PURE__ */ __name(({
+  rowIndex,
+  row,
+  columns,
+  focusedCell,
+  selectedRange,
+  editingCell,
+  checkboxSelection,
+  isRowSelected,
+  onToggleRowSelection,
+  isPinned,
+  pinnedRowIndex = 0,
+  rowDraggable,
+  rowHeight,
+  onRowClick,
+  getRowsForIndices,
+  selectedRowIndices = [],
+  className
+}) => {
+  const handleDragStart = /* @__PURE__ */ __name((e) => {
+    if (!rowDraggable) return;
+    let rowsToDrag;
+    if (getRowsForIndices && selectedRowIndices.length > 1 && selectedRowIndices.includes(rowIndex)) {
+      rowsToDrag = getRowsForIndices(selectedRowIndices);
+    } else if (getRowsForIndices && selectedRange && selectedRange.start.row !== selectedRange.end.row) {
+      const rMin = Math.min(selectedRange.start.row, selectedRange.end.row);
+      const rMax = Math.max(selectedRange.start.row, selectedRange.end.row);
+      if (rowIndex >= rMin && rowIndex <= rMax) {
+        const indices = Array.from({ length: rMax - rMin + 1 }, (_, i) => rMin + i);
+        rowsToDrag = getRowsForIndices(indices);
+      } else {
+        rowsToDrag = [row];
+      }
+    } else {
+      rowsToDrag = [row];
+    }
+    if (rowsToDrag.length === 0) rowsToDrag = [row];
+    e.dataTransfer.setData(EXCEL_GRID_ROWS_TYPE, JSON.stringify(rowsToDrag));
+    e.dataTransfer.effectAllowed = "copy";
+    createDragPreview(rowsToDrag, columns, e.dataTransfer);
+    const tr = e.currentTarget;
+    tr.style.cursor = "grabbing";
+  }, "handleDragStart");
+  const handleDragEnd = /* @__PURE__ */ __name((e) => {
+    e.currentTarget.style.cursor = "grab";
+  }, "handleDragEnd");
+  const rowStyle = {
+    ...rowHeight != null ? { height: rowHeight, minHeight: rowHeight } : {},
+    ...rowDraggable ? { cursor: "grab" } : {},
+    ...isPinned ? {
+      position: "sticky",
+      top: pinnedRowIndex * (rowHeight ?? 32),
+      zIndex: 5,
+      background: "white",
+      boxShadow: "0 1px 0 #e5e7eb"
+    } : {}
+  };
+  return /* @__PURE__ */ jsx22(
+    "tr",
+    {
+      className: cn(className, isRowSelected && "bg-blue-50"),
+      draggable: rowDraggable,
+      onDragStart: rowDraggable ? handleDragStart : void 0,
+      onDragEnd: rowDraggable ? handleDragEnd : void 0,
+      style: Object.keys(rowStyle).length > 0 ? rowStyle : void 0,
+      title: rowDraggable ? "\uD589\uC744 \uC7A1\uC544 \uB2E4\uB978 \uADF8\uB9AC\uB4DC\uB85C \uB4DC\uB798\uADF8\uD558\uC138\uC694" : void 0,
+      "aria-label": rowDraggable ? `\uD589 ${rowIndex + 1} \uB4DC\uB798\uADF8 \uAC00\uB2A5` : void 0,
+      onClick: (e) => {
+        if (e.target.closest('input[type="checkbox"]')) return;
+        if (onRowClick) {
+          onRowClick(e);
+          return;
+        }
+        if (checkboxSelection && onToggleRowSelection) onToggleRowSelection();
+      },
+      children: columns.map((col, colIndex) => {
+        const leftPx = col.pinned === "left" ? getPinnedOffset(columns, colIndex, "left") : void 0;
+        const rightPx = col.pinned === "right" ? getPinnedOffset(columns, colIndex, "right") : void 0;
+        const pinnedStyle = leftPx !== void 0 ? { position: "sticky", left: leftPx, zIndex: 4, background: "white", boxShadow: "2px 0 2px -2px rgba(0,0,0,0.08)" } : rightPx !== void 0 ? { position: "sticky", right: rightPx, zIndex: 4, background: "white", boxShadow: "-2px 0 2px -2px rgba(0,0,0,0.08)" } : {};
+        if (col.field === "__drag__") {
+          return /* @__PURE__ */ jsx22(
+            "td",
+            {
+              className: "border-b border-r border-gray-200 px-1 py-1 text-center align-middle",
+              style: { ...col.width != null ? { width: col.width, minWidth: col.width } : {}, ...pinnedStyle },
+              onClick: (e) => e.stopPropagation(),
+              "aria-hidden": true,
+              children: /* @__PURE__ */ jsx22("span", { className: "inline-flex cursor-grab text-gray-400 hover:text-gray-600 select-none", title: "\uD589 \uC7A1\uC544 \uB4DC\uB798\uADF8", children: "\u22EE\u22EE" })
+            },
+            col.field
+          );
+        }
+        if (col.field === "__checkbox__" && checkboxSelection) {
+          return /* @__PURE__ */ jsx22(
+            "td",
+            {
+              className: "border-b border-r border-gray-200 px-2 py-1 text-sm w-10",
+              style: { ...col.width != null ? { width: col.width, minWidth: col.width } : {}, ...pinnedStyle },
+              onClick: (e) => e.stopPropagation(),
+              children: /* @__PURE__ */ jsx22(
+                Checkbox,
+                {
+                  checked: !!isRowSelected,
+                  onChange: () => onToggleRowSelection?.(),
+                  "aria-label": `\uD589 ${rowIndex + 1} \uC120\uD0DD`
+                }
+              )
+            },
+            col.field
+          );
+        }
+        const value = row[col.field];
+        const focused = focusedCell !== null && focusedCell.row === rowIndex && focusedCell.col === colIndex;
+        const selected = selectedRange !== null && isCellInRange(rowIndex, colIndex, selectedRange);
+        const editing = editingCell !== null && editingCell.row === rowIndex && editingCell.col === colIndex;
+        return /* @__PURE__ */ jsx22(
+          GridCell,
+          {
+            value,
+            focused,
+            selected,
+            editing,
+            rowIndex,
+            colIndex,
+            width: col.width,
+            editor: col.editor,
+            dropdownOptions: col.dropdownOptions,
+            pinnedStyle
+          },
+          col.field
+        );
+      })
+    }
+  );
+}, "GridRow");
+
+// src/components/molecules/ExcelGrid/core/GridBody.tsx
+import { jsx as jsx23, jsxs as jsxs9 } from "react/jsx-runtime";
+var GridBody = /* @__PURE__ */ __name(({
+  rows,
+  columns,
+  focusedCell,
+  selectedRange,
+  editingCell,
+  checkboxSelection,
+  selectedRowIndices = [],
+  onToggleRowSelection,
+  pinnedRowCount = 0,
+  startRowIndex = 0,
+  virtualScroll,
+  rowDraggable,
+  onDropRows,
+  onDragOverRows,
+  multiSelect,
+  onRowClick,
+  getRowsForIndices,
+  className
+}) => {
+  const colCount = columns.length;
+  const topHeight = virtualScroll ? virtualScroll.startIndex * virtualScroll.rowHeight : 0;
+  const bottomHeight = virtualScroll ? (virtualScroll.totalRows - virtualScroll.endIndex) * virtualScroll.rowHeight : 0;
+  const spacerCell = /* @__PURE__ */ __name((key, height) => /* @__PURE__ */ jsx23("tr", { "aria-hidden": true, style: { height, lineHeight: 0, fontSize: 0 }, children: /* @__PURE__ */ jsx23("td", { colSpan: colCount, style: { height, padding: 0, border: "none", verticalAlign: "top" } }) }, key), "spacerCell");
+  return /* @__PURE__ */ jsxs9(
+    "tbody",
+    {
+      className: cn(className, onDropRows && "relative"),
+      onDragOver: onDragOverRows,
+      onDrop: onDropRows,
+      children: [
+        topHeight > 0 && spacerCell("top-spacer", topHeight),
+        rows.map((row, i) => {
+          const rowIndex = startRowIndex + i;
+          return /* @__PURE__ */ jsx23(
+            GridRow,
+            {
+              rowIndex,
+              row,
+              columns,
+              focusedCell,
+              selectedRange,
+              editingCell,
+              checkboxSelection,
+              isRowSelected: selectedRowIndices.includes(rowIndex),
+              onToggleRowSelection: onToggleRowSelection ? () => onToggleRowSelection(rowIndex) : void 0,
+              isPinned: i < pinnedRowCount,
+              pinnedRowIndex: i,
+              rowDraggable,
+              rowHeight: virtualScroll?.rowHeight,
+              onRowClick: onRowClick ? (e) => onRowClick(rowIndex, e) : void 0,
+              getRowsForIndices,
+              selectedRowIndices
+            },
+            rowIndex
+          );
+        }),
+        bottomHeight > 0 && spacerCell("bottom-spacer", bottomHeight)
+      ]
+    }
+  );
+}, "GridBody");
+
+// src/components/molecules/ExcelGrid/model/rowModel.ts
+var getCellValue = /* @__PURE__ */ __name((row, field) => row[field], "getCellValue");
+var setCellValue = /* @__PURE__ */ __name((rows, rowIndex, field, value) => {
+  const next = rows.map(
+    (r, i) => i === rowIndex ? { ...r, [field]: value } : r
+  );
+  return next;
+}, "setCellValue");
+var clampRowIndex = /* @__PURE__ */ __name((rows, row) => Math.max(0, Math.min(row, rows.length - 1)), "clampRowIndex");
+
+// src/components/molecules/ExcelGrid/model/sortFilterModel.ts
+var rowMatchesSearch = /* @__PURE__ */ __name((row, columns, searchText) => {
+  if (!searchText.trim()) return true;
+  const lower = searchText.trim().toLowerCase();
+  return columns.some((col) => {
+    if (col.field === "__checkbox__") return false;
+    const v = getCellValue(row, col.field);
+    return String(v ?? "").toLowerCase().includes(lower);
+  });
+}, "rowMatchesSearch");
+var compare = /* @__PURE__ */ __name((a, b) => {
+  const na = Number(a);
+  const nb = Number(b);
+  if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+  return String(a ?? "").localeCompare(String(b ?? ""), void 0, { numeric: true });
+}, "compare");
+var rowMatchesColumnFilters = /* @__PURE__ */ __name((row, columns, columnFilters) => {
+  const dataCols = columns.filter((c) => c.field !== "__checkbox__");
+  return dataCols.every((col, dataIdx) => {
+    const filter = columnFilters[dataIdx];
+    if (!filter?.trim()) return true;
+    const v = getCellValue(row, col.field);
+    return String(v ?? "").toLowerCase().includes(filter.trim().toLowerCase());
+  });
+}, "rowMatchesColumnFilters");
+var getDisplayedRows = /* @__PURE__ */ __name((rows, columns, searchText, sortBy, columnFilters = {}) => {
+  const withIndex = rows.map((row, originalIndex) => ({ row, originalIndex })).filter(({ row }) => rowMatchesSearch(row, columns, searchText)).filter(({ row }) => rowMatchesColumnFilters(row, columns, columnFilters));
+  if (!sortBy) return withIndex;
+  const colDef = getColumnByIndex(columns, sortBy.col);
+  if (!colDef || colDef.field === "__checkbox__") return withIndex;
+  const sorted = [...withIndex].sort((a, b) => {
+    const va = getCellValue(a.row, colDef.field);
+    const vb = getCellValue(b.row, colDef.field);
+    const c = compare(va, vb);
+    return sortBy.dir === "asc" ? c : -c;
+  });
+  return sorted;
+}, "getDisplayedRows");
+
+// src/components/molecules/ExcelGrid/controller/selection.ts
+var moveFocus = /* @__PURE__ */ __name((store, row, col) => {
+  const rows = store.getState().rows;
+  const cols = store.getState().columns;
+  if (rows.length === 0 || cols.length === 0) return;
+  const r = clampRowIndex(rows, row);
+  const c = clampColIndex(cols, col);
+  store.setState({
+    focusedCell: { row: r, col: c },
+    selectedRange: { start: { row: r, col: c }, end: { row: r, col: c } }
+  });
+}, "moveFocus");
+var extendSelection = /* @__PURE__ */ __name((store, endRow, endCol) => {
+  const state = store.getState();
+  const focus = state.focusedCell;
+  const rows = state.rows;
+  const cols = state.columns;
+  if (!focus || rows.length === 0 || cols.length === 0) return;
+  const r = clampRowIndex(rows, endRow);
+  const c = clampColIndex(cols, endCol);
+  store.setState({
+    focusedCell: { row: r, col: c },
+    selectedRange: { start: focus, end: { row: r, col: c } }
+  });
+}, "extendSelection");
+var moveFocusBy = /* @__PURE__ */ __name((store, dRow, dCol) => {
+  const state = store.getState();
+  const focus = state.focusedCell;
+  const rows = state.rows;
+  const cols = state.columns;
+  if (!focus || rows.length === 0 || cols.length === 0) return null;
+  const r = clampRowIndex(rows, focus.row + dRow);
+  const c = clampColIndex(cols, focus.col + dCol);
+  moveFocus(store, r, c);
+  return { row: r, col: c };
+}, "moveFocusBy");
+
+// src/components/molecules/ExcelGrid/controller/clipboard.ts
+var copySelection = /* @__PURE__ */ __name((store, opts = {}) => {
+  const state = store.getState();
+  const { rows, columns, selectedRange, columnOrder } = state;
+  const displayCols = getDisplayColumns(columns, columnOrder);
+  if (!selectedRange || rows.length === 0 || displayCols.length === 0) return "";
+  if (opts.editable === false) return "";
+  const rMin = Math.min(selectedRange.start.row, selectedRange.end.row);
+  const rMax = Math.max(selectedRange.start.row, selectedRange.end.row);
+  const cMin = Math.min(selectedRange.start.col, selectedRange.end.col);
+  const cMax = Math.max(selectedRange.start.col, selectedRange.end.col);
+  const lines = [];
+  for (let r = rMin; r <= rMax; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const cells = [];
+    for (let c = cMin; c <= cMax; c++) {
+      const col = getColumnByIndex(displayCols, c);
+      if (col?.field === "__checkbox__") continue;
+      if (opts.editable === true && col?.editable === false) continue;
+      const val = col ? getCellValue(row, col.field) : void 0;
+      cells.push(String(val ?? ""));
+    }
+    lines.push(cells.join("	"));
+  }
+  return lines.join("\n");
+}, "copySelection");
+var pasteAtFocus = /* @__PURE__ */ __name((store, text, opts = {}) => {
+  const state = store.getState();
+  const { rows, columns, focusedCell, columnOrder } = state;
+  const displayCols = getDisplayColumns(columns, columnOrder);
+  if (rows.length === 0 || displayCols.length === 0) return;
+  if (opts.editable === false) return;
+  const focus = focusedCell ?? { row: 0, col: 0 };
+  const lines = text.split(/\r?\n/).filter((line) => line.length > 0 || text.includes("\n"));
+  if (lines.length === 0) return;
+  const parsed = lines.map((line) => line.split("	"));
+  let nextRows = [...rows];
+  const getOriginal = opts.getOriginalRowIndex ?? ((i) => i);
+  for (let dr = 0; dr < parsed.length; dr++) {
+    const displayedRowIndex = focus.row + dr;
+    const rowIndex = getOriginal(displayedRowIndex);
+    if (rowIndex < 0 || rowIndex >= nextRows.length) continue;
+    const line = parsed[dr];
+    if (!line) continue;
+    for (let dc = 0; dc < line.length; dc++) {
+      const colIndex = focus.col + dc;
+      if (colIndex >= displayCols.length) break;
+      const colDef = getColumnByIndex(displayCols, colIndex);
+      if (!colDef || colDef.field === "__checkbox__") continue;
+      if (colDef.editable === false) continue;
+      const value = line[dc];
+      nextRows = setCellValue(nextRows, rowIndex, colDef.field, value);
+      opts.onChange?.(rowIndex, colIndex, value);
+    }
+  }
+  store.setRows(nextRows);
+}, "pasteAtFocus");
+
+// src/components/molecules/ExcelGrid/controller/keyboard.ts
+var createKeyDownHandler = /* @__PURE__ */ __name((options) => {
+  const { store } = options;
+  const commitEditingCell = /* @__PURE__ */ __name(() => {
+    const state = store.getState();
+    const { editingCell, rows, columns, columnOrder } = state;
+    if (!editingCell || !options.getEditingValue || !options.onChange) return;
+    const displayCols = getDisplayColumns(columns, columnOrder);
+    const colDef = getColumnByIndex(displayCols, editingCell.col);
+    if (!colDef || colDef.field === "__checkbox__") return;
+    const value = options.getEditingValue();
+    const originalRow = options.getOriginalRowIndex?.(editingCell.row) ?? editingCell.row;
+    const nextRows = setCellValue(rows, originalRow, colDef.field, value);
+    store.setRows(nextRows);
+    options.onChange(originalRow, editingCell.col, value);
+    store.setState({ editingCell: null });
+  }, "commitEditingCell");
+  return (event) => {
+    const state = store.getState();
+    const { focusedCell, editingCell, rows, columns, columnOrder } = state;
+    const displayCols = getDisplayColumns(columns, columnOrder);
+    if (displayCols.length === 0 || rows.length === 0) return;
+    const focus = focusedCell ?? { row: 0, col: 0 };
+    if (editingCell) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitEditingCell();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        store.setState({ editingCell: null });
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        commitEditingCell();
+        moveFocusBy(store, 0, event.shiftKey ? -1 : 1);
+      }
+      return;
+    }
+    if (event.key === "c" && (event.metaKey || event.ctrlKey)) {
+      const text = copySelection(store, { editable: options.editable });
+      if (text) {
+        event.preventDefault();
+        void navigator.clipboard.writeText(text);
+      }
+      return;
+    }
+    if (event.key === "v" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      if (editingCell) commitEditingCell();
+      if (!options.editable) return;
+      navigator.clipboard.readText().then((t) => {
+        pasteAtFocus(store, t, {
+          onChange: options.onChange,
+          getOriginalRowIndex: options.getOriginalRowIndex,
+          editable: options.editable
+        });
+      });
+      return;
+    }
+    switch (event.key) {
+      case "ArrowUp":
+        event.preventDefault();
+        moveFocusBy(store, -1, 0);
+        return;
+      case "ArrowDown":
+        event.preventDefault();
+        moveFocusBy(store, 1, 0);
+        return;
+      case "ArrowLeft":
+        event.preventDefault();
+        moveFocusBy(store, 0, -1);
+        return;
+      case "ArrowRight":
+        event.preventDefault();
+        moveFocusBy(store, 0, 1);
+        return;
+      case "Enter":
+        event.preventDefault();
+        if (options.editable) {
+          const colDef = getColumnByIndex(displayCols, focus.col);
+          if (colDef?.field !== "__checkbox__" && colDef?.editable !== false) {
+            store.setState({ editingCell: focus });
+          }
+        } else {
+          moveFocusBy(store, 1, 0);
+        }
+        return;
+      case "Tab":
+        event.preventDefault();
+        if (event.shiftKey) moveFocusBy(store, 0, -1);
+        else moveFocusBy(store, 0, 1);
+        return;
+      default:
+        break;
+    }
+  };
+}, "createKeyDownHandler");
+
+// src/components/molecules/ExcelGrid/controller/mouse.ts
+var CELL_SELECTOR = "[data-row][data-col]";
+var getCellFromEvent = /* @__PURE__ */ __name((e) => {
+  const el = e.target.closest(CELL_SELECTOR);
+  if (!el) return null;
+  const row = el.getAttribute("data-row");
+  const col = el.getAttribute("data-col");
+  if (row == null || col == null) return null;
+  return { row: parseInt(row, 10), col: parseInt(col, 10) };
+}, "getCellFromEvent");
+var createPointerHandlers = /* @__PURE__ */ __name((store, options) => {
+  let isDragSelecting = false;
+  const handlePointerDown = /* @__PURE__ */ __name((e) => {
+    const cell = getCellFromEvent(e);
+    if (!cell) return;
+    e.preventDefault();
+    isDragSelecting = true;
+    moveFocus(store, cell.row, cell.col);
+  }, "handlePointerDown");
+  const handlePointerMove = /* @__PURE__ */ __name((e) => {
+    if (!isDragSelecting) return;
+    const cell = getCellFromEvent(e);
+    if (!cell) return;
+    extendSelection(store, cell.row, cell.col);
+  }, "handlePointerMove");
+  const handlePointerUp = /* @__PURE__ */ __name(() => {
+    isDragSelecting = false;
+  }, "handlePointerUp");
+  const handleDoubleClick = /* @__PURE__ */ __name((e) => {
+    const cell = getCellFromEvent(e);
+    if (!cell || !options.editable) return;
+    const { columns } = store.getState();
+    const colDef = getColumnByIndex(columns, cell.col);
+    if (colDef?.editable === false) return;
+    store.setState({ editingCell: cell });
+  }, "handleDoubleClick");
+  return {
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    handleDoubleClick
+  };
+}, "createPointerHandlers");
+
+// src/components/molecules/ExcelGrid/utils/exportImport.ts
+var DEFAULT_DELIMITER = ",";
+var DEFAULT_LINE_END = "\n";
+var exportTableToText = /* @__PURE__ */ __name((rows, columns, opts = {}) => {
+  const delim = opts.delimiter ?? DEFAULT_DELIMITER;
+  const lineEnd = opts.lineEnd ?? DEFAULT_LINE_END;
+  const includeHeader = opts.includeHeader !== false;
+  const dataColumns = columns.filter((c) => c.field !== "__checkbox__");
+  const lines = [];
+  if (includeHeader) {
+    lines.push(dataColumns.map((c) => escapeCell(c.header ?? c.field, delim)).join(delim));
+  }
+  for (const row of rows) {
+    const cells = dataColumns.map((col) => {
+      const v = getCellValue(row, col.field);
+      return escapeCell(v == null ? "" : String(v), delim);
+    });
+    lines.push(cells.join(delim));
+  }
+  return lines.join(lineEnd);
+}, "exportTableToText");
+var importTableFromText = /* @__PURE__ */ __name((text, columns, opts = {}) => {
+  const delim = opts.delimiter ?? DEFAULT_DELIMITER;
+  const lineEnd = opts.lineEnd ?? "\n";
+  const includeHeader = opts.includeHeader !== false;
+  const dataColumns = columns.filter((c) => c.field !== "__checkbox__");
+  const lines = text.split(/\r?\n/).filter((line) => line.length > 0);
+  let start = 0;
+  if (includeHeader && lines.length > 0) start = 1;
+  const rows = [];
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i];
+    const cells = parseLine(line, delim);
+    const row = {};
+    dataColumns.forEach((col, ci) => {
+      row[col.field] = cells[ci] ?? "";
+    });
+    rows.push(row);
+  }
+  return rows;
+}, "importTableFromText");
+function escapeCell(val, delim) {
+  const needsQuote = val.includes(delim) || val.includes('"') || val.includes("\n") || val.includes("\r");
+  if (!needsQuote) return val;
+  return `"${val.replace(/"/g, '""')}"`;
+}
+__name(escapeCell, "escapeCell");
+function parseLine(line, delim) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (inQuotes) {
+      current += c;
+    } else if (c === delim) {
+      result.push(current);
+      current = "";
+    } else {
+      current += c;
+    }
+  }
+  result.push(current);
+  return result;
+}
+__name(parseLine, "parseLine");
+var downloadTableAsFile = /* @__PURE__ */ __name((content, filename, mimeType = "text/csv;charset=utf-8") => {
+  const blob = new Blob(["\uFEFF" + content], { type: mimeType });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}, "downloadTableAsFile");
+
+// src/components/molecules/ExcelGrid/ExcelGridInner.tsx
+import { Fragment as Fragment4, jsx as jsx24, jsxs as jsxs10 } from "react/jsx-runtime";
+var getDataColIndexFromDisplay = /* @__PURE__ */ __name((displayColIndex, displayColumns, dataCols) => {
+  const col = displayColumns[displayColIndex];
+  if (!col || col.field === "__checkbox__" || col.field === "__drag__") return -1;
+  return dataCols.findIndex((c) => c.field === col.field);
+}, "getDataColIndexFromDisplay");
+var ExcelGridInner = /* @__PURE__ */ __name(({
+  className,
+  style
+}) => {
+  const state = useExcelGridState();
+  const gridRef = useExcelGridRef();
+  const opts = useExcelGridOptions();
+  const getOriginalRowIndexRef = useExcelGridOriginalRowIndexRef();
+  const { store } = opts;
+  const [page, setPage] = useState3(1);
+  const [columnDragIndex, setColumnDragIndex] = useState3(null);
+  const handleKeyDown = useMemo6(
+    () => createKeyDownHandler({
+      store,
+      editable: opts.editable,
+      onChange: opts.onChange,
+      getEditingValue: opts.getEditingValue,
+      getOriginalRowIndex: /* @__PURE__ */ __name((i) => getOriginalRowIndexRef.current?.(i) ?? i, "getOriginalRowIndex")
+    }),
+    [store, opts.editable, opts.onChange, opts.getEditingValue]
+  );
+  const pointerHandlers = useMemo6(
+    () => createPointerHandlers(store, { editable: opts.editable }),
+    [store, opts.editable]
+  );
+  const fileInputRef = useRef3(null);
+  const scrollContainerRef = useRef3(null);
+  const headerScrollRef = useRef3(null);
+  const selectionAnchorRef = useRef3(null);
+  const [scrollState, setScrollState] = useState3({ scrollTop: 0, containerHeight: 400 });
+  const displayColumns = useMemo6(
+    () => getDisplayColumns(state.columns, state.columnOrder),
+    [state.columns, state.columnOrder]
+  );
+  const displayedRows = useMemo6(
+    () => getDisplayedRows(
+      state.rows,
+      displayColumns,
+      state.searchText,
+      state.sortBy,
+      state.columnFilters
+    ),
+    [state.rows, displayColumns, state.searchText, state.sortBy, state.columnFilters]
+  );
+  const pagination = opts.pagination;
+  const pageSize = pagination?.pageSize ?? displayedRows.length;
+  const totalPages = Math.max(1, Math.ceil(displayedRows.length / pageSize));
+  const currentPage = pagination?.page ?? page;
+  const setCurrentPage = pagination?.onPageChange ?? setPage;
+  const virtualScrollOpts = opts.virtualScroll;
+  const useVirtualScroll = Boolean(virtualScrollOpts);
+  const rowHeight = virtualScrollOpts?.rowHeight ?? 32;
+  const maxScrollHeight = virtualScrollOpts?.maxHeight ?? 400;
+  const paginatedRows = useMemo6(() => {
+    if (useVirtualScroll) return displayedRows;
+    if (!pagination || displayedRows.length <= pageSize) return displayedRows;
+    const start = (currentPage - 1) * pageSize;
+    return displayedRows.slice(start, start + pageSize);
+  }, [displayedRows, pagination, pageSize, currentPage, useVirtualScroll]);
+  const totalVirtualRows = useVirtualScroll ? displayedRows.length : paginatedRows.length;
+  const virtualStart = useVirtualScroll ? Math.max(0, Math.floor(scrollState.scrollTop / rowHeight)) : 0;
+  const virtualEnd = useVirtualScroll ? Math.min(
+    totalVirtualRows,
+    virtualStart + Math.ceil(scrollState.containerHeight / rowHeight) + 2
+  ) : totalVirtualRows;
+  const virtualSlice = useVirtualScroll ? displayedRows.slice(virtualStart, virtualEnd) : paginatedRows;
+  const virtualStartRowIndex = useVirtualScroll ? virtualStart : pagination ? (currentPage - 1) * pageSize : 0;
+  const hasCheckboxColumn = displayColumns.some((c) => c.field === "__checkbox__");
+  const hasDragColumn = displayColumns.some((c) => c.field === "__drag__");
+  const columnOrder = state.columnOrder;
+  const dataCols = useMemo6(
+    () => state.columns.filter((c) => c.field !== "__checkbox__" && c.field !== "__drag__"),
+    [state.columns]
+  );
+  useEffect3(() => {
+    getOriginalRowIndexRef.current = (i) => {
+      const idx = virtualStartRowIndex + i;
+      return displayedRows[idx]?.originalIndex ?? idx;
+    };
+    return () => {
+      getOriginalRowIndexRef.current = null;
+    };
+  }, [virtualStartRowIndex, displayedRows, getOriginalRowIndexRef]);
+  const handleScroll = useCallback3(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    if (useVirtualScroll) setScrollState({ scrollTop: el.scrollTop, containerHeight: el.clientHeight });
+    if (headerScrollRef.current) headerScrollRef.current.scrollLeft = el.scrollLeft;
+  }, [useVirtualScroll]);
+  useEffect3(() => {
+    if (!useVirtualScroll) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setScrollState((s) => ({ ...s, containerHeight: el.clientHeight })));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [useVirtualScroll]);
+  useEffect3(() => {
+    const onPointerUp = /* @__PURE__ */ __name(() => pointerHandlers.handlePointerUp(), "onPointerUp");
+    window.addEventListener("pointerup", onPointerUp);
+    return () => window.removeEventListener("pointerup", onPointerUp);
+  }, [pointerHandlers]);
+  const { focusedCell, selectedRange, editingCell, selectedRowIndices, sortBy } = state;
+  const rowsToShow = virtualSlice.map((d) => d.row);
+  useEffect3(() => {
+    if (!editingCell || !gridRef.current) return;
+    const sel = `[data-row="${editingCell.row}"][data-col="${editingCell.col}"]`;
+    const input = gridRef.current.querySelector(`input${sel}`);
+    if (input) {
+      input.focus();
+      return;
+    }
+    const selectEl = gridRef.current.querySelector(`select${sel}`);
+    selectEl?.focus();
+  }, [editingCell, gridRef]);
+  const handleHeaderSort = useCallback3((colIndex) => {
+    if (!opts.sortable) return;
+    if (!sortBy || sortBy.col !== colIndex) store.setSortBy(colIndex, "asc");
+    else if (sortBy.dir === "asc") store.setSortBy(colIndex, "desc");
+    else store.clearSort();
+  }, [sortBy, opts.sortable, store]);
+  const handleExport = useCallback3(() => {
+    const dataCols2 = displayColumns.filter((c) => c.field !== "__checkbox__" && c.field !== "__drag__");
+    const content = exportTableToText(state.rows, dataCols2, {
+      delimiter: opts.exportImportDelimiter ?? ","
+    });
+    downloadTableAsFile(content, opts.exportFileName ?? "export.csv");
+  }, [state.rows, displayColumns, opts.exportFileName, opts.exportImportDelimiter]);
+  const handleImport = useCallback3(
+    (e) => {
+      const file = e.target.files?.[0];
+      if (!file || !opts.onImport) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result ?? "");
+        const dataCols2 = displayColumns.filter((c) => c.field !== "__checkbox__" && c.field !== "__drag__");
+        const rows = importTableFromText(text, dataCols2, {
+          delimiter: opts.exportImportDelimiter ?? ","
+        });
+        opts.onImport(rows);
+      };
+      reader.readAsText(file, "UTF-8");
+      e.target.value = "";
+    },
+    [opts.onImport, opts.exportImportDelimiter, displayColumns]
+  );
+  const handleColumnDragStart = /* @__PURE__ */ __name((displayIndex) => setColumnDragIndex(displayIndex), "handleColumnDragStart");
+  const handleColumnDragOver = /* @__PURE__ */ __name((e, displayIndex) => {
+    e.preventDefault();
+    if (columnDragIndex == null || columnDragIndex === displayIndex) return;
+    const dataDisplayCols = displayColumns.filter((c) => c.field !== "__checkbox__" && c.field !== "__drag__");
+    const metaCount = (hasDragColumn ? 1 : 0) + (hasCheckboxColumn ? 1 : 0);
+    const from = columnDragIndex - metaCount;
+    const to = displayIndex - metaCount;
+    if (from < 0 || to < 0 || from >= dataDisplayCols.length || to >= dataDisplayCols.length) return;
+    const next = [...dataDisplayCols];
+    const [removed] = next.splice(from, 1);
+    next.splice(to, 0, removed);
+    const newColumnOrder = next.map((c) => dataCols.findIndex((x) => x.field === c.field)).filter((i) => i >= 0);
+    if (newColumnOrder.length === dataCols.length) store.setColumnOrder(newColumnOrder);
+    setColumnDragIndex(displayIndex);
+  }, "handleColumnDragOver");
+  const handleColumnDragEnd = /* @__PURE__ */ __name(() => setColumnDragIndex(null), "handleColumnDragEnd");
+  const handleDropRows = useCallback3(
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const raw = e.dataTransfer.getData("application/x-excelgrid-rows");
+      if (!raw || !opts.onDropRows) return;
+      try {
+        const rows = JSON.parse(raw);
+        if (Array.isArray(rows) && rows.length > 0) opts.onDropRows(rows);
+      } catch {
+      }
+    },
+    [opts.onDropRows]
+  );
+  const handleDragOverRows = useCallback3((e) => {
+    if (!e.dataTransfer.types.includes("application/x-excelgrid-rows")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+  const handleMultiSelectRow = useCallback3(
+    (rowIndex, e) => {
+      const anchor = selectionAnchorRef.current;
+      if (e.shiftKey) {
+        const from = anchor != null ? Math.min(anchor, rowIndex) : 0;
+        const to = anchor != null ? Math.max(anchor, rowIndex) : rowIndex;
+        const indices = Array.from({ length: to - from + 1 }, (_, i) => from + i).filter(
+          (i) => i >= 0 && i < totalVirtualRows
+        );
+        store.setSelectedRowIndices(indices);
+      } else if (e.ctrlKey || e.metaKey) {
+        const set = new Set(state.selectedRowIndices);
+        if (set.has(rowIndex)) set.delete(rowIndex);
+        else set.add(rowIndex);
+        store.setSelectedRowIndices(Array.from(set));
+        selectionAnchorRef.current = rowIndex;
+      } else {
+        store.setSelectedRowIndices([rowIndex]);
+        selectionAnchorRef.current = rowIndex;
+      }
+    },
+    [totalVirtualRows, state.selectedRowIndices, store]
+  );
+  const getRowsForIndices = useCallback3(
+    (indices) => indices.map((i) => displayedRows[i]?.row).filter((r) => r != null),
+    [displayedRows]
+  );
+  const pinnedRowCount = opts.pinnedRowCount ?? 0;
+  return /* @__PURE__ */ jsxs10(GridRoot, { className, style, children: [
+    /* @__PURE__ */ jsxs10("div", { className: "flex flex-wrap items-center gap-2 mb-2", children: [
+      opts.searchPlaceholder != null && /* @__PURE__ */ jsx24(
+        Input,
+        {
+          type: "search",
+          placeholder: opts.searchPlaceholder,
+          value: state.searchText,
+          onChange: (e) => store.setSearchText(e.target.value),
+          className: "max-w-xs"
+        }
+      ),
+      opts.onAddRow && /* @__PURE__ */ jsx24(Button, { type: "button", variant: "secondary", size: "sm", onClick: opts.onAddRow, children: "\uD589 \uCD94\uAC00" }),
+      opts.exportFileName && /* @__PURE__ */ jsxs10(Fragment4, { children: [
+        /* @__PURE__ */ jsx24(Button, { type: "button", variant: "secondary", size: "sm", onClick: handleExport, children: "Export" }),
+        opts.onImport && /* @__PURE__ */ jsxs10(Fragment4, { children: [
+          /* @__PURE__ */ jsx24(
+            "input",
+            {
+              ref: fileInputRef,
+              type: "file",
+              accept: ".csv,.txt",
+              className: "hidden",
+              onChange: handleImport
+            }
+          ),
+          /* @__PURE__ */ jsx24(
+            Button,
+            {
+              type: "button",
+              variant: "secondary",
+              size: "sm",
+              onClick: () => fileInputRef.current?.click(),
+              children: "Import"
+            }
+          )
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx24(
+      GridViewport,
+      {
+        ref: gridRef,
+        onKeyDown: handleKeyDown,
+        onPointerDown: pointerHandlers.handlePointerDown,
+        onPointerMove: pointerHandlers.handlePointerMove,
+        onPointerUp: pointerHandlers.handlePointerUp,
+        onDoubleClick: pointerHandlers.handleDoubleClick,
+        children: /* @__PURE__ */ jsxs10(
+          "div",
+          {
+            className: "flex flex-col border border-gray-200 rounded overflow-hidden",
+            style: useVirtualScroll ? { maxHeight: maxScrollHeight, minHeight: 0 } : void 0,
+            children: [
+              /* @__PURE__ */ jsx24(
+                "div",
+                {
+                  ref: headerScrollRef,
+                  className: "bg-gray-100 overflow-x-auto overflow-y-hidden shrink-0",
+                  style: { scrollbarWidth: "none", msOverflowStyle: "none" },
+                  children: /* @__PURE__ */ jsxs10("table", { className: "w-full border-collapse", style: { tableLayout: "fixed" }, children: [
+                    /* @__PURE__ */ jsx24("colgroup", { children: displayColumns.map((col, i) => /* @__PURE__ */ jsx24("col", { style: col.width != null ? { width: col.width, minWidth: col.width } : void 0 }, col.field)) }),
+                    /* @__PURE__ */ jsx24("thead", { children: /* @__PURE__ */ jsx24("tr", { children: displayColumns.map((col, colIndex) => {
+                      const leftPx = col.pinned === "left" ? getPinnedOffset(displayColumns, colIndex, "left") : void 0;
+                      const rightPx = col.pinned === "right" ? getPinnedOffset(displayColumns, colIndex, "right") : void 0;
+                      const stickyStyle = leftPx !== void 0 ? { position: "sticky", left: leftPx, zIndex: 11, background: "#f3f4f6", boxShadow: "2px 0 2px -2px rgba(0,0,0,0.1)" } : rightPx !== void 0 ? { position: "sticky", right: rightPx, zIndex: 11, background: "#f3f4f6", boxShadow: "-2px 0 2px -2px rgba(0,0,0,0.1)" } : {};
+                      const isMetaCol = col.field === "__checkbox__" || col.field === "__drag__";
+                      return /* @__PURE__ */ jsx24(
+                        "th",
+                        {
+                          className: cn(
+                            "border-b border-r border-gray-200 px-2 py-2 text-left text-xs font-medium text-gray-700",
+                            opts.sortable && !isMetaCol && "cursor-pointer select-none hover:bg-gray-200",
+                            opts.columnReorder && !isMetaCol && "cursor-grab",
+                            columnDragIndex === colIndex && "opacity-50"
+                          ),
+                          style: {
+                            ...col.width != null ? { width: col.width, minWidth: col.width } : {},
+                            ...stickyStyle
+                          },
+                          onClick: opts.sortable && !isMetaCol ? () => handleHeaderSort(colIndex) : void 0,
+                          draggable: opts.columnReorder && !isMetaCol,
+                          onDragStart: () => opts.columnReorder && handleColumnDragStart(colIndex),
+                          onDragOver: (e) => opts.columnReorder && handleColumnDragOver(e, colIndex),
+                          onDragEnd: handleColumnDragEnd,
+                          children: col.field === "__drag__" ? /* @__PURE__ */ jsx24("span", { className: "inline-block w-4 h-4 text-gray-400", "aria-hidden": true, children: "\u22EE\u22EE" }) : col.field === "__checkbox__" ? hasCheckboxColumn && /* @__PURE__ */ jsx24("div", { onClick: (e) => e.stopPropagation(), children: /* @__PURE__ */ jsx24(
+                            IndeterminateCheckbox,
+                            {
+                              checked: totalVirtualRows > 0 && selectedRowIndices.length === totalVirtualRows,
+                              indeterminate: selectedRowIndices.length > 0 && selectedRowIndices.length < totalVirtualRows,
+                              onChange: () => store.toggleAllRowsSelection(totalVirtualRows),
+                              "aria-label": "\uC804\uCCB4 \uC120\uD0DD"
+                            }
+                          ) }) : /* @__PURE__ */ jsxs10("div", { className: "flex flex-col gap-1", children: [
+                            /* @__PURE__ */ jsxs10("span", { className: "inline-flex items-center gap-1", children: [
+                              col.header ?? col.field,
+                              opts.sortable && sortBy?.col === colIndex && /* @__PURE__ */ jsx24("span", { className: "text-blue-600", "aria-hidden": true, children: sortBy.dir === "asc" ? "\u25B2" : "\u25BC" })
+                            ] }),
+                            opts.columnFilter && /* @__PURE__ */ jsx24(
+                              "input",
+                              {
+                                type: "text",
+                                placeholder: "\uD544\uD130...",
+                                value: state.columnFilters[getDataColIndexFromDisplay(colIndex, displayColumns, dataCols)] ?? "",
+                                onChange: (e) => store.setColumnFilter(getDataColIndexFromDisplay(colIndex, displayColumns, dataCols), e.target.value),
+                                onClick: (e) => e.stopPropagation(),
+                                className: "w-full text-xs border border-gray-300 rounded px-1 py-0.5"
+                              }
+                            )
+                          ] })
+                        },
+                        `${col.field}-${colIndex}`
+                      );
+                    }) }) })
+                  ] })
+                }
+              ),
+              /* @__PURE__ */ jsx24(
+                "div",
+                {
+                  ref: scrollContainerRef,
+                  onScroll: handleScroll,
+                  className: "flex-1 min-h-0 overflow-auto",
+                  children: /* @__PURE__ */ jsxs10("table", { className: "w-full border-collapse border-t-0", style: useVirtualScroll ? { tableLayout: "fixed" } : void 0, children: [
+                    /* @__PURE__ */ jsx24("colgroup", { children: displayColumns.map((col) => /* @__PURE__ */ jsx24("col", { style: col.width != null ? { width: col.width, minWidth: col.width } : void 0 }, col.field)) }),
+                    /* @__PURE__ */ jsx24(
+                      GridBody,
+                      {
+                        rows: rowsToShow,
+                        columns: displayColumns,
+                        focusedCell,
+                        selectedRange,
+                        editingCell,
+                        checkboxSelection: hasCheckboxColumn,
+                        selectedRowIndices,
+                        onToggleRowSelection: store.toggleRowSelection,
+                        pinnedRowCount,
+                        startRowIndex: virtualStartRowIndex,
+                        virtualScroll: useVirtualScroll ? {
+                          totalRows: totalVirtualRows,
+                          rowHeight,
+                          startIndex: virtualStart,
+                          endIndex: virtualEnd
+                        } : void 0,
+                        rowDraggable: opts.rowDraggable,
+                        onDropRows: opts.onDropRows ? handleDropRows : void 0,
+                        onDragOverRows: opts.onDropRows ? handleDragOverRows : void 0,
+                        multiSelect: opts.multiSelect,
+                        onRowClick: opts.multiSelect ? handleMultiSelectRow : void 0,
+                        getRowsForIndices: opts.rowDraggable ? getRowsForIndices : void 0
+                      }
+                    )
+                  ] })
+                }
+              )
+            ]
+          }
+        )
+      }
+    ),
+    pagination && !useVirtualScroll && totalPages > 1 && /* @__PURE__ */ jsxs10("div", { className: "flex items-center gap-2 mt-2", children: [
+      /* @__PURE__ */ jsx24(
+        Button,
+        {
+          type: "button",
+          variant: "secondary",
+          size: "sm",
+          disabled: currentPage <= 1,
+          onClick: () => setCurrentPage(currentPage - 1),
+          children: "\uC774\uC804"
+        }
+      ),
+      /* @__PURE__ */ jsxs10("span", { className: "text-sm", children: [
+        currentPage,
+        " / ",
+        totalPages
+      ] }),
+      /* @__PURE__ */ jsx24(
+        Button,
+        {
+          type: "button",
+          variant: "secondary",
+          size: "sm",
+          disabled: currentPage >= totalPages,
+          onClick: () => setCurrentPage(currentPage + 1),
+          children: "\uB2E4\uC74C"
+        }
+      )
+    ] })
+  ] });
+}, "ExcelGridInner");
+
+// src/components/molecules/ExcelGrid/ExcelGrid.tsx
+import { jsx as jsx25 } from "react/jsx-runtime";
+var ExcelGrid = /* @__PURE__ */ __name(({
+  columns,
+  rows,
+  editable = false,
+  selection = true,
+  checkboxSelection = false,
+  multiSelect = false,
+  onSelectionChange,
+  sortable = false,
+  searchPlaceholder,
+  columnFilter = false,
+  columnReorder = false,
+  pagination,
+  virtualScroll,
+  pinnedRowCount = 0,
+  rowDraggable = false,
+  onDropRows,
+  onAddRow,
+  exportFileName,
+  exportImportDelimiter = ",",
+  onImport,
+  onChange,
+  className,
+  style
+}) => /* @__PURE__ */ jsx25(
+  ExcelGridProvider,
+  {
+    rows,
+    columns,
+    editable,
+    checkboxSelection,
+    multiSelect,
+    onSelectionChange,
+    sortable,
+    searchPlaceholder,
+    columnFilter,
+    columnReorder,
+    pagination,
+    virtualScroll,
+    pinnedRowCount,
+    rowDraggable,
+    onDropRows,
+    onAddRow,
+    exportFileName,
+    exportImportDelimiter,
+    onImport,
+    onChange,
+    children: /* @__PURE__ */ jsx25(ExcelGridInner, { className, style })
+  }
+), "ExcelGrid");
+
 // src/hooks/useDisclosure.ts
-import { useCallback as useCallback2, useState as useState3 } from "react";
+import { useCallback as useCallback4, useState as useState4 } from "react";
 var useDisclosure = /* @__PURE__ */ __name((initial = false) => {
-  const [isOpen, setIsOpen] = useState3(initial);
-  const open = useCallback2(() => setIsOpen(true), []);
-  const close = useCallback2(() => setIsOpen(false), []);
-  const toggle = useCallback2(() => setIsOpen((prev) => !prev), []);
+  const [isOpen, setIsOpen] = useState4(initial);
+  const open = useCallback4(() => setIsOpen(true), []);
+  const close = useCallback4(() => setIsOpen(false), []);
+  const toggle = useCallback4(() => setIsOpen((prev) => !prev), []);
   return { isOpen, open, close, toggle };
 }, "useDisclosure");
 export {
@@ -1168,6 +2654,7 @@ export {
   Dropdown,
   EditableCell,
   EditableTable,
+  ExcelGrid,
   I18nProvider,
   Input,
   Modal,
