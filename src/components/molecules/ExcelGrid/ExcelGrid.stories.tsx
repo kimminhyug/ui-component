@@ -185,12 +185,20 @@ export const VirtualScroll: Story = {
   },
 };
 
-/** 왼쪽/오른쪽 고정 컬럼 */
+/** 왼쪽/오른쪽 고정 컬럼 (pinned: true = 'left' 호환) */
 const columnsWithPinned: ColumnDef[] = [
   { field: 'name', header: '이름', width: 120, pinned: 'left' },
   { field: 'email', header: '이메일', width: 200 },
   { field: 'role', header: '역할', width: 100 },
   { field: 'score', header: '점수', width: 80, pinned: 'right' },
+];
+
+/** 행 순서 변경용: 첫 컬럼에 rowDrag (AG Grid 스타일) */
+const columnsWithRowDrag: ColumnDef[] = [
+  { field: 'name', header: '이름', width: 120, rowDrag: true },
+  { field: 'email', header: '이메일', width: 200 },
+  { field: 'role', header: '역할', width: 100 },
+  { field: 'score', header: '점수', width: 80 },
 ];
 
 export const PinnedColumns: Story = {
@@ -209,7 +217,63 @@ export const PinnedColumns: Story = {
   },
 };
 
+/** column.movable: false인 컬럼은 드래그로 옮기기 불가 */
+const columnsWithMovable: ColumnDef[] = [
+  { field: 'name', header: '이름', width: 120 },
+  { field: 'email', header: '이메일', width: 200, movable: false },
+  { field: 'role', header: '역할', width: 100 },
+  { field: 'score', header: '점수', width: 80 },
+];
+
+export const ColumnMovable: Story = {
+  args: {
+    columns: columnsWithMovable,
+    rows: initialRows,
+    selection: true,
+    columnReorder: true,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: '이메일 컬럼만 movable: false — 드래그 불가. 나머지 컬럼은 드래그로 순서 변경 가능.',
+      },
+    },
+  },
+};
+
 /** 행 grab + 드래그 미리보기 + 멀티 드래그(선택 행/셀 범위) → 다른 그리드로 추가 */
+/** 행 드래그로 같은 그리드 내 순서 변경 (AG Grid rowDrag) */
+export const RowDragReorder: Story = {
+  render: () => {
+    const [rows, setRows] = useState<RowData[]>(initialRows);
+    return (
+      <ExcelGrid
+        columns={columnsWithRowDrag}
+        rows={rows}
+        selection
+        onRowOrderChange={(newRows) => setRows(newRows)}
+        editable
+        onChange={(r, c, v) => {
+          const col = columnsWithRowDrag[c];
+          if (col)
+            setRows((prev) => {
+              const next = [...prev];
+              next[r] = { ...next[r], [col.field]: v };
+              return next;
+            });
+        }}
+      />
+    );
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: '첫 컬럼(이름)의 ⋮⋮ 핸들을 드래그해 행 순서를 바꿉니다. onRowOrderChange로 부모 rows 상태를 업데이트하세요.',
+      },
+    },
+  },
+};
+
 export const RowDragToOtherGrid: Story = {
   render: () => {
     const [rowsA, setRowsA] = useState<RowData[]>(largeRows.slice(0, 3));
@@ -239,12 +303,17 @@ export const RowDragToOtherGrid: Story = {
           />
         </div>
         <div>
-          <p className="text-sm font-medium mb-1">그리드 B (여기에 드롭하여 추가)</p>
+          <p className="text-sm font-medium mb-1">그리드 B (파란 선 위치에 삽입)</p>
           <ExcelGrid
             columns={columns}
             rows={rowsB}
             selection
-            onDropRows={(dropped) => setRowsB((prev) => [...prev, ...dropped])}
+            onDropRows={(dropped, insertAtIndex) => {
+              setRowsB((prev) => {
+                const at = insertAtIndex ?? prev.length;
+                return [...prev.slice(0, at), ...dropped, ...prev.slice(at)];
+              });
+            }}
             editable
             onChange={(r, c, v) => {
               const col = columns[c];
@@ -264,7 +333,92 @@ export const RowDragToOtherGrid: Story = {
     docs: {
       description: {
         story:
-          '드래그 시 미리보기 표시. 단일 행 또는 여러 행 선택(multiSelect) / 셀 범위 선택 후 드래그하면 선택한 행 전체가 B에 추가됩니다.',
+          '드래그 시 미리보기 + 파란 선으로 삽입 위치 표시. onDropRows(rows, insertAtIndex)로 해당 위치에 삽입.',
+      },
+    },
+  },
+};
+
+const columnsWithFilterTypes: ColumnDef[] = [
+  { field: 'name', header: '이름', width: 120 },
+  { field: 'score', header: '점수', width: 80, filterType: 'number' },
+  { field: 'role', header: '역할', width: 100 },
+];
+
+export const ColumnFilterByType: Story = {
+  args: {
+    columns: columnsWithFilterTypes,
+    rows: initialRows,
+    selection: true,
+    columnFilter: true,
+  },
+  parameters: {
+    docs: {
+      description: { story: '점수 컬럼은 filterType: "number" (숫자 일치). 이름/역할은 text(포함).' },
+    },
+  },
+};
+
+export const RowLoading: Story = {
+  render: () => {
+    const [rows, setRows] = useState<RowData[]>(initialRows);
+    const loadingRow = 1;
+    return (
+      <>
+        <p className="text-sm text-gray-600 mb-1">2번째 행에 로딩 표시 (isRowLoading)</p>
+        <ExcelGrid
+          columns={columns}
+          rows={rows}
+          selection
+          isRowLoading={(idx) => idx === loadingRow}
+          onChange={(r, c, v) => {
+            const col = columns[c];
+            if (col) setRows((prev) => [...prev.slice(0, r), { ...prev[r], [col.field]: v }, ...prev.slice(r + 1)]);
+          }}
+        />
+      </>
+    );
+  },
+  parameters: {
+    docs: { description: { story: 'isRowLoading(rowIndex)이 true인 행은 "로딩 중..." 표시.' } },
+  },
+};
+
+/** onCellChange: 변경된 셀만 강조 (ring + 배경) */
+export const CellChangeHighlight: Story = {
+  render: () => {
+    const [rows, setRows] = useState<RowData[]>(initialRows);
+    const [changed, setChanged] = useState<Set<string>>(new Set());
+    return (
+      <>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+          셀을 편집하면 해당 셀에 노란 테두리·배경이 적용됩니다 (onCellChange + getCellClassName).
+        </p>
+        <ExcelGrid
+          columns={columns}
+          rows={rows}
+          selection
+          editable
+          onChange={(r, c, v) => {
+            const col = columns[c];
+            if (col) setRows((prev) => [...prev.slice(0, r), { ...prev[r], [col.field]: v }, ...prev.slice(r + 1)]);
+          }}
+          onCellChange={(rowIndex, colIndex) => {
+            setChanged((prev) => new Set(prev).add(`${rowIndex},${colIndex}`));
+          }}
+          getCellClassName={(rowIndex, colIndex) =>
+            changed.has(`${rowIndex},${colIndex}`)
+              ? 'ring-2 ring-amber-400 dark:ring-amber-500 bg-amber-50/80 dark:bg-amber-900/30'
+              : undefined
+          }
+        />
+      </>
+    );
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: 'onCellChange로 변경된 셀을 추적하고, getCellClassName으로 해당 셀에 스타일을 넣어 변경 여부를 시각적으로 표시.',
       },
     },
   },
@@ -294,6 +448,38 @@ export const ExportImport: Story = {
   },
   parameters: {
     docs: { description: { story: 'Export/Import 버튼. 구분자 옵션(기본 CSV).' } },
+  },
+};
+
+/** 다크모드: 상위에 class="dark" 적용 시 그리드 다크 스타일 */
+export const DarkMode: Story = {
+  render: () => {
+    const [rows, setRows] = useState<RowData[]>(initialRows);
+    return (
+      <div className="dark bg-gray-950 p-6 rounded-lg min-h-[320px] text-gray-100">
+        <p className="text-sm text-gray-400 mb-2">
+          다크 모드 예제 (상위에 <code className="text-amber-400">class=&quot;dark&quot;</code> 적용)
+        </p>
+        <ExcelGrid
+          columns={columns}
+          rows={rows}
+          selection
+          editable
+          columnFilter
+          onChange={(r, c, v) => {
+            const col = columns[c];
+            if (col) setRows((prev) => [...prev.slice(0, r), { ...prev[r], [col.field]: v }, ...prev.slice(r + 1)]);
+          }}
+        />
+      </div>
+    );
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: 'Tailwind dark: 변수가 적용된 그리드. 부모에 class="dark"를 주면 헤더·본문·필터·에디터가 통일된 다크 팔레트로 표시됩니다.',
+      },
+    },
   },
 };
 

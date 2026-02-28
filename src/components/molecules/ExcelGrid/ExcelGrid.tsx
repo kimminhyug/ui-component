@@ -20,11 +20,15 @@ export const ExcelGrid = ({
   pinnedRowCount = 0,
   rowDraggable = false,
   onDropRows,
+  onRowOrderChange,
   onAddRow,
+  isRowLoading,
+  getCellClassName,
   exportFileName,
   exportImportDelimiter = ',',
   onImport,
   onChange,
+  onCellChange,
   className,
   style,
 }: ExcelGridProps) => (
@@ -44,11 +48,15 @@ export const ExcelGrid = ({
     pinnedRowCount={pinnedRowCount}
     rowDraggable={rowDraggable}
     onDropRows={onDropRows}
+    onRowOrderChange={onRowOrderChange}
     onAddRow={onAddRow}
+    isRowLoading={isRowLoading}
+    getCellClassName={getCellClassName}
     exportFileName={exportFileName}
     exportImportDelimiter={exportImportDelimiter}
     onImport={onImport}
     onChange={onChange}
+    onCellChange={onCellChange}
   >
     <ExcelGridInner className={className} style={style} />
   </ExcelGridProvider>

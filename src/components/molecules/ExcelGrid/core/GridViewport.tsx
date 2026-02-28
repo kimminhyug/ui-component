@@ -33,7 +33,10 @@ export const GridViewport = forwardRef<HTMLDivElement, GridViewportProps>(
       role="grid"
       tabIndex={0}
       draggable={false}
-      onDragStart={(e) => e.preventDefault()}
+      onDragStart={(e) => {
+        if ((e.target as HTMLElement)?.closest?.('tr[data-row-index]')) return;
+        e.preventDefault();
+      }}
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

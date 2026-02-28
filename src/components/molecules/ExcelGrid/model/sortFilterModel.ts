@@ -26,18 +26,46 @@ export interface DisplayRow {
   originalIndex: number;
 }
 
-/** 컬럼별 필터에 맞는지 (데이터 컬럼 인덱스 -> 검색어) */
+/** 필터 타입별 일치 여부 */
+const matchesFilter = (
+  value: unknown,
+  filterValue: string,
+  col: ColumnDef
+): boolean => {
+  const trimmed = filterValue.trim();
+  if (!trimmed) return true;
+
+  if (col.filterType === 'custom' && col.filterFn) {
+    return col.filterFn(value, trimmed);
+  }
+  if (col.filterType === 'number') {
+    const n = Number(value);
+    const nFilter = Number(trimmed);
+    if (!Number.isNaN(n) && !Number.isNaN(nFilter)) return n === nFilter;
+    return String(value ?? '').toLowerCase().includes(trimmed.toLowerCase());
+  }
+  if (col.filterType === 'date') {
+    const d = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+    const dFilter = new Date(trimmed).getTime();
+    if (!Number.isNaN(d) && !Number.isNaN(dFilter)) return d === dFilter;
+    return String(value ?? '').toLowerCase().includes(trimmed.toLowerCase());
+  }
+  // text (default)
+  return String(value ?? '').toLowerCase().includes(trimmed.toLowerCase());
+};
+
+/** 컬럼별 필터에 맞는지 (데이터 컬럼 인덱스 -> 검색어, filterType 적용) */
 const rowMatchesColumnFilters = (
   row: RowData,
   columns: ColumnDef[],
   columnFilters: Record<number, string>
 ): boolean => {
-  const dataCols = columns.filter((c) => c.field !== '__checkbox__');
+  const dataCols = columns.filter((c) => c.field !== '__checkbox__' && c.field !== '__drag__');
   return dataCols.every((col, dataIdx) => {
     const filter = columnFilters[dataIdx];
     if (!filter?.trim()) return true;
     const v = getCellValue(row, col.field);
-    return String(v ?? '').toLowerCase().includes(filter.trim().toLowerCase());
+    return matchesFilter(v, filter, col);
   });
 };
 

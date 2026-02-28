@@ -11,6 +11,7 @@ export interface ExcelGridContextValue {
   getEditingValue: () => string | undefined;
   editable: boolean;
   onChange?: (rowIndex: number, colIndex: number, value: unknown) => void;
+  onCellChange?: (rowIndex: number, colIndex: number, prevValue: unknown, nextValue: unknown) => void;
   sortable?: boolean;
   searchPlaceholder?: string;
   columnFilter?: boolean;
@@ -20,8 +21,10 @@ export interface ExcelGridContextValue {
   pinnedRowCount?: number;
   multiSelect?: boolean;
   rowDraggable?: boolean;
-  onDropRows?: (rows: RowData[]) => void;
+  onDropRows?: (rows: RowData[], insertAtIndex?: number) => void;
+  onRowOrderChange?: (newRows: RowData[]) => void;
   onAddRow?: () => void;
+  isRowLoading?: (rowIndex: number) => boolean;
   exportFileName?: string;
   exportImportDelimiter?: string;
   onImport?: (rows: RowData[]) => void;
@@ -68,12 +71,16 @@ interface ExcelGridProviderProps {
   pinnedRowCount?: number;
   multiSelect?: boolean;
   rowDraggable?: boolean;
-  onDropRows?: (rows: RowData[]) => void;
+  onDropRows?: (rows: RowData[], insertAtIndex?: number) => void;
+  onRowOrderChange?: (newRows: RowData[]) => void;
   onAddRow?: () => void;
+  isRowLoading?: (rowIndex: number) => boolean;
+  getCellClassName?: (rowIndex: number, colIndex: number) => string | undefined;
   exportFileName?: string;
   exportImportDelimiter?: string;
   onImport?: (rows: RowData[]) => void;
   onChange?: (rowIndex: number, colIndex: number, value: unknown) => void;
+  onCellChange?: (rowIndex: number, colIndex: number, prevValue: unknown, nextValue: unknown) => void;
   children: React.ReactNode;
 }
 
@@ -94,11 +101,15 @@ export const ExcelGridProvider = ({
   multiSelect = false,
   rowDraggable = false,
   onDropRows,
+  onRowOrderChange,
   onAddRow,
+  isRowLoading,
+  getCellClassName,
   exportFileName,
   exportImportDelimiter = ',',
   onImport,
   onChange,
+  onCellChange,
   children,
 }: ExcelGridProviderProps) => {
   const gridRef = useRef<HTMLDivElement>(null);
@@ -110,9 +121,31 @@ export const ExcelGridProvider = ({
 
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
 
+  const initOptions = useMemo(
+    () => ({ checkboxSelection, rowDraggable }),
+    [checkboxSelection, rowDraggable]
+  );
+  const hasInitedRef = useRef(false);
+  const prevColumnsRef = useRef(columns);
+  const prevOptionsRef = useRef(initOptions);
+
   useEffect(() => {
-    store.initStore(rows, columns, { checkboxSelection, rowDraggable });
-  }, [rows, columns, checkboxSelection, rowDraggable, store]);
+    const columnsChanged =
+      prevColumnsRef.current !== columns ||
+      prevColumnsRef.current?.length !== columns?.length;
+    const optionsChanged =
+      prevOptionsRef.current.checkboxSelection !== initOptions.checkboxSelection ||
+      prevOptionsRef.current.rowDraggable !== initOptions.rowDraggable;
+
+    if (!hasInitedRef.current || columnsChanged || optionsChanged) {
+      store.initStore(rows, columns, initOptions);
+      hasInitedRef.current = true;
+      prevColumnsRef.current = columns;
+      prevOptionsRef.current = initOptions;
+    } else {
+      store.setRows(rows);
+    }
+  }, [rows, columns, initOptions, store]);
 
   const getEditingValue = useCallback((): string | undefined => {
     const root = gridRef.current;
@@ -141,6 +174,7 @@ export const ExcelGridProvider = ({
       getEditingValue,
       editable: !!editable,
       onChange,
+      onCellChange,
       sortable,
       searchPlaceholder,
       columnFilter,
@@ -151,7 +185,10 @@ export const ExcelGridProvider = ({
       multiSelect,
       rowDraggable,
       onDropRows,
+      onRowOrderChange,
       onAddRow,
+      isRowLoading,
+      getCellClassName,
       exportFileName,
       exportImportDelimiter,
       onImport,
@@ -162,6 +199,7 @@ export const ExcelGridProvider = ({
       getEditingValue,
       editable,
       onChange,
+      onCellChange,
       sortable,
       searchPlaceholder,
       columnFilter,
@@ -172,7 +210,10 @@ export const ExcelGridProvider = ({
       multiSelect,
       rowDraggable,
       onDropRows,
+      onRowOrderChange,
       onAddRow,
+      isRowLoading,
+      getCellClassName,
       exportFileName,
       exportImportDelimiter,
       onImport,

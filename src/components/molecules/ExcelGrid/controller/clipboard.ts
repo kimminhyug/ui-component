@@ -38,6 +38,7 @@ export const copySelection = (store: GridStoreApi, opts: CopyOptions = {}): stri
 
 export interface PasteOptions {
   onChange?: (rowIndex: number, colIndex: number, value: unknown) => void;
+  onCellChange?: (rowIndex: number, colIndex: number, prevValue: unknown, nextValue: unknown) => void;
   getOriginalRowIndex?: (displayedRow: number) => number;
   editable?: boolean;
 }
@@ -71,8 +72,12 @@ export const pasteAtFocus = (store: GridStoreApi, text: string, opts: PasteOptio
       if (!colDef || colDef.field === '__checkbox__') continue;
       if (colDef.editable === false) continue;
       const value = line[dc];
+      const prevValue = getCellValue(nextRows[rowIndex], colDef.field);
       nextRows = setCellValue(nextRows, rowIndex, colDef.field, value);
       opts.onChange?.(rowIndex, colIndex, value);
+      if (opts.onCellChange && String(prevValue ?? '') !== String(value ?? '')) {
+        opts.onCellChange(rowIndex, colIndex, prevValue, value);
+      }
     }
   }
 

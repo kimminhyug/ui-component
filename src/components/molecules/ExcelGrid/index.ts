@@ -8,6 +8,8 @@ export type {
   SortDirection,
   CellEditorType,
   PaginationOptions,
+  PinnedType,
+  ColumnFilterType,
 } from './types';
 export { exportTableToText, importTableFromText, downloadTableAsFile } from './utils/exportImport';
 export type { ExportImportOptions } from './utils/exportImport';

@@ -1,37 +1,48 @@
 import type { GridStoreApi } from '../state/gridStore';
 import { moveFocusBy } from './selection';
 import { getColumnByIndex, getDisplayColumns } from '../model/columnModel';
-import { setCellValue } from '../model/rowModel';
+import { getCellValue, setCellValue } from '../model/rowModel';
 import { copySelection, pasteAtFocus } from './clipboard';
 
 export interface KeyboardControllerOptions {
   store: GridStoreApi;
   editable: boolean;
   onChange?: (rowIndex: number, colIndex: number, value: unknown) => void;
+  onCellChange?: (rowIndex: number, colIndex: number, prevValue: unknown, nextValue: unknown) => void;
   getEditingValue?: () => string | undefined;
   getOriginalRowIndex?: (displayedRow: number) => number;
 }
 
+export interface KeyDownHandlerResult {
+  handleKeyDown: (event: React.KeyboardEvent) => void;
+  /** 편집 셀 커밋(blur 시 호출). 입력 끝났을 때 감지용 */
+  commitEditingCell: () => void;
+}
+
 /** 그리드별 키다운 핸들러 생성 */
-export const createKeyDownHandler = (options: KeyboardControllerOptions) => {
+export const createKeyDownHandler = (options: KeyboardControllerOptions): KeyDownHandlerResult => {
   const { store } = options;
 
   const commitEditingCell = (): void => {
     const state = store.getState();
     const { editingCell, rows, columns, columnOrder } = state;
-    if (!editingCell || !options.getEditingValue || !options.onChange) return;
+    if (!editingCell || !options.getEditingValue) return;
     const displayCols = getDisplayColumns(columns, columnOrder);
     const colDef = getColumnByIndex(displayCols, editingCell.col);
     if (!colDef || colDef.field === '__checkbox__') return;
     const value = options.getEditingValue();
     const originalRow = options.getOriginalRowIndex?.(editingCell.row) ?? editingCell.row;
+    const prevValue = getCellValue(rows[originalRow], colDef.field);
     const nextRows = setCellValue(rows, originalRow, colDef.field, value);
     store.setRows(nextRows);
-    options.onChange(originalRow, editingCell.col, value);
+    if (options.onChange) options.onChange(originalRow, editingCell.col, value);
+    if (options.onCellChange && String(prevValue ?? '') !== String(value ?? '')) {
+      options.onCellChange(originalRow, editingCell.col, prevValue, value);
+    }
     store.setState({ editingCell: null });
   };
 
-  return (event: React.KeyboardEvent): void => {
+  const handleKeyDown = (event: React.KeyboardEvent): void => {
     const state = store.getState();
     const { focusedCell, editingCell, rows, columns, columnOrder } = state;
     const displayCols = getDisplayColumns(columns, columnOrder);
@@ -69,6 +80,7 @@ export const createKeyDownHandler = (options: KeyboardControllerOptions) => {
       navigator.clipboard.readText().then((t) => {
         pasteAtFocus(store, t, {
           onChange: options.onChange,
+          onCellChange: options.onCellChange,
           getOriginalRowIndex: options.getOriginalRowIndex,
           editable: options.editable,
         });
@@ -113,4 +125,6 @@ export const createKeyDownHandler = (options: KeyboardControllerOptions) => {
         break;
     }
   };
+
+  return { handleKeyDown, commitEditingCell };
 };

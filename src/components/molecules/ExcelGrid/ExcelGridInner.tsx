@@ -4,7 +4,8 @@ import { GridRoot } from './core/GridRoot';
 import { GridViewport } from './core/GridViewport';
 import { GridBody } from './core/GridBody';
 import { getDisplayedRows } from './model/sortFilterModel';
-import { getDisplayColumns, getPinnedOffset } from './model/columnModel';
+import { getDisplayColumns, getPinnedOffset, getEffectivePinned, getTableMinWidth, getColumnByIndex } from './model/columnModel';
+import { getCellValue, setCellValue } from './model/rowModel';
 import { createKeyDownHandler } from './controller/keyboard';
 import { createPointerHandlers } from './controller/mouse';
 import { exportTableToText, downloadTableAsFile, importTableFromText } from './utils/exportImport';
@@ -40,22 +41,28 @@ export const ExcelGridInner = ({
   const { store } = opts;
   const [page, setPage] = useState(1);
   const [columnDragIndex, setColumnDragIndex] = useState<number | null>(null);
+  const [dropInsertBeforeIndex, setDropInsertBeforeIndex] = useState<number | null>(null);
 
-  const handleKeyDown = useMemo(
+  const { handleKeyDown, commitEditingCell } = useMemo(
     () =>
       createKeyDownHandler({
         store,
         editable: opts.editable,
         onChange: opts.onChange,
+        onCellChange: opts.onCellChange,
         getEditingValue: opts.getEditingValue,
         getOriginalRowIndex: (i) => getOriginalRowIndexRef.current?.(i) ?? i,
       }),
-    [store, opts.editable, opts.onChange, opts.getEditingValue]
+    [store, opts.editable, opts.onChange, opts.onCellChange, opts.getEditingValue]
   );
 
   const pointerHandlers = useMemo(
-    () => createPointerHandlers(store, { editable: opts.editable }),
-    [store, opts.editable]
+    () =>
+      createPointerHandlers(store, {
+        editable: opts.editable,
+        commitEditingCell,
+      }),
+    [store, opts.editable, commitEditingCell]
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -113,6 +120,10 @@ export const ExcelGridInner = ({
 
   const hasCheckboxColumn = displayColumns.some((c) => c.field === '__checkbox__');
   const hasDragColumn = displayColumns.some((c) => c.field === '__drag__');
+  const rowDragColumnIndex = useMemo(
+    () => displayColumns.findIndex((c) => c.rowDrag === true),
+    [displayColumns]
+  );
   const columnOrder = state.columnOrder;
   const dataCols = useMemo(
     () => state.columns.filter((c) => c.field !== '__checkbox__' && c.field !== '__drag__'),
@@ -226,19 +237,72 @@ export const ExcelGridInner = ({
       if (!raw || !opts.onDropRows) return;
       try {
         const rows = JSON.parse(raw) as import('./types').RowData[];
-        if (Array.isArray(rows) && rows.length > 0) opts.onDropRows(rows);
+        if (Array.isArray(rows) && rows.length > 0) {
+          const insertAtIndex = dropInsertBeforeIndex ?? totalVirtualRows;
+          opts.onDropRows(rows, insertAtIndex);
+        }
       } catch {
         // ignore
       }
+      setDropInsertBeforeIndex(null);
     },
-    [opts.onDropRows]
+    [opts.onDropRows, dropInsertBeforeIndex, totalVirtualRows]
   );
-  const handleDragOverRows = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('application/x-excelgrid-rows')) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
+  const handleDragOverRows = useCallback(
+    (e: React.DragEvent) => {
+      const isReorder = e.dataTransfer.types.includes('application/x-excelgrid-row-reorder');
+      const isRows = e.dataTransfer.types.includes('application/x-excelgrid-rows');
+      if (isReorder) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+      } else if (isRows) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+      } else return;
+
+      if (isReorder || isRows) {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const tr = el?.closest('tr[data-row-index]');
+        if (tr) {
+          const idx = parseInt(tr.getAttribute('data-row-index') ?? '', 10);
+          if (!Number.isNaN(idx)) {
+            const rect = tr.getBoundingClientRect();
+            const insertBefore =
+              e.clientY < rect.top + rect.height / 2 ? idx : idx + 1;
+            setDropInsertBeforeIndex(Math.min(insertBefore, totalVirtualRows));
+            return;
+          }
+        }
+        setDropInsertBeforeIndex(totalVirtualRows);
+      }
+    },
+    [totalVirtualRows]
+  );
+
+  const handleDragLeaveGrid = useCallback(() => {
+    setDropInsertBeforeIndex(null);
   }, []);
+
+  const handleRowReorderDrop = useCallback(
+    (fromDisplayedIndex: number, toDisplayedIndex: number) => {
+      if (fromDisplayedIndex === toDisplayedIndex) return;
+      setDropInsertBeforeIndex(null);
+      const { rows } = store.getState();
+      const fromOriginal = displayedRows[fromDisplayedIndex]?.originalIndex ?? fromDisplayedIndex;
+      const toOriginal = displayedRows[toDisplayedIndex]?.originalIndex ?? toDisplayedIndex;
+      if (fromOriginal < 0 || toOriginal < 0 || fromOriginal >= rows.length || toOriginal >= rows.length) return;
+      const newRows = [...rows];
+      const [removed] = newRows.splice(fromOriginal, 1);
+      let insertAt = toOriginal;
+      if (fromOriginal < toOriginal) insertAt -= 1;
+      newRows.splice(insertAt, 0, removed!);
+      store.setRows(newRows);
+      opts.onRowOrderChange?.(newRows);
+    },
+    [displayedRows, store, opts.onRowOrderChange]
+  );
 
   const handleMultiSelectRow = useCallback(
     (rowIndex: number, e: React.MouseEvent) => {
@@ -272,7 +336,29 @@ export const ExcelGridInner = ({
     [displayedRows]
   );
 
+  const handleEditingChange = useCallback(
+    (newValue: string) => {
+      const s = store.getState();
+      const { editingCell, rows, columns, columnOrder } = s;
+      if (!editingCell) return;
+      const displayCols = getDisplayColumns(columns, columnOrder);
+      const colDef = getColumnByIndex(displayCols, editingCell.col);
+      if (!colDef || colDef.field === '__checkbox__' || colDef.field === '__drag__') return;
+      const originalRow = getOriginalRowIndexRef.current?.(editingCell.row) ?? editingCell.row;
+      const prevValue = getCellValue(rows[originalRow], colDef.field);
+      const nextRows = setCellValue(rows, originalRow, colDef.field, newValue);
+      store.setRows(nextRows);
+      opts.onChange?.(originalRow, editingCell.col, newValue);
+      if (opts.onCellChange && String(prevValue ?? '') !== String(newValue ?? '')) {
+        opts.onCellChange(originalRow, editingCell.col, prevValue, newValue);
+      }
+    },
+    [store, opts.onChange, opts.onCellChange]
+  );
+
   const pinnedRowCount = opts.pinnedRowCount ?? 0;
+  const hasPinnedColumn = displayColumns.some((c) => getEffectivePinned(c) != null);
+  const tableMinWidth = hasPinnedColumn ? getTableMinWidth(displayColumns) : undefined;
 
   return (
     <GridRoot className={className} style={style}>
@@ -328,7 +414,7 @@ export const ExcelGridInner = ({
         onDoubleClick={pointerHandlers.handleDoubleClick}
       >
         <div
-          className="flex flex-col border border-gray-200 rounded overflow-hidden"
+          className="flex flex-col border border-gray-200 dark:border-gray-700 rounded overflow-hidden dark:bg-gray-900"
           style={
             useVirtualScroll
               ? { maxHeight: maxScrollHeight, minHeight: 0 }
@@ -338,7 +424,7 @@ export const ExcelGridInner = ({
           {/* 헤더: 스크롤 영역 밖 고정. 가로 스크롤은 body와 동기화 */}
           <div
             ref={headerScrollRef}
-            className="bg-gray-100 overflow-x-auto overflow-y-hidden shrink-0"
+            className="bg-gray-100 dark:bg-gray-800/95 dark:border-b dark:border-gray-700 overflow-x-auto overflow-y-hidden shrink-0"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
@@ -350,22 +436,27 @@ export const ExcelGridInner = ({
               <thead>
                 <tr>
                   {displayColumns.map((col, colIndex) => {
-                    const leftPx = col.pinned === 'left' ? getPinnedOffset(displayColumns, colIndex, 'left') : undefined;
-                    const rightPx = col.pinned === 'right' ? getPinnedOffset(displayColumns, colIndex, 'right') : undefined;
+                    const pinned = getEffectivePinned(col);
+                    const leftPx = pinned === 'left' ? getPinnedOffset(displayColumns, colIndex, 'left') : undefined;
+                    const rightPx = pinned === 'right' ? getPinnedOffset(displayColumns, colIndex, 'right') : undefined;
                     const stickyStyle: React.CSSProperties =
                       leftPx !== undefined
-                        ? { position: 'sticky', left: leftPx, zIndex: 11, background: '#f3f4f6', boxShadow: '2px 0 2px -2px rgba(0,0,0,0.1)' }
+                        ? { position: 'sticky', left: leftPx, zIndex: 11, boxShadow: '2px 0 2px -2px rgba(0,0,0,0.1)' }
                         : rightPx !== undefined
-                          ? { position: 'sticky', right: rightPx, zIndex: 11, background: '#f3f4f6', boxShadow: '-2px 0 2px -2px rgba(0,0,0,0.1)' }
+                          ? { position: 'sticky', right: rightPx, zIndex: 11, boxShadow: '-2px 0 2px -2px rgba(0,0,0,0.1)' }
                           : {};
+                    const stickyThClass = leftPx !== undefined || rightPx !== undefined ? 'bg-gray-100 dark:bg-gray-800/95' : '';
                     const isMetaCol = col.field === '__checkbox__' || col.field === '__drag__';
+                    const colMovable = 'movable' in col ? (col as import('./types').ColumnDef).movable !== false : true;
+                    const canDragCol = opts.columnReorder && !isMetaCol && colMovable;
                     return (
                       <th
                         key={`${col.field}-${colIndex}`}
                         className={cn(
-                          'border-b border-r border-gray-200 px-2 py-2 text-left text-xs font-medium text-gray-700',
-                          opts.sortable && !isMetaCol && 'cursor-pointer select-none hover:bg-gray-200',
-                          opts.columnReorder && !isMetaCol && 'cursor-grab',
+                          'border-b border-r border-gray-200 dark:border-gray-700 px-2 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-100',
+                          stickyThClass,
+                          opts.sortable && !isMetaCol && 'cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700/80',
+                          canDragCol && 'cursor-grab',
                           columnDragIndex === colIndex && 'opacity-50'
                         )}
                         style={{
@@ -377,13 +468,13 @@ export const ExcelGridInner = ({
                             ? () => handleHeaderSort(colIndex)
                             : undefined
                         }
-                        draggable={opts.columnReorder && !isMetaCol}
-                        onDragStart={() => opts.columnReorder && handleColumnDragStart(colIndex)}
-                        onDragOver={(e) => opts.columnReorder && handleColumnDragOver(e, colIndex)}
+                        draggable={canDragCol}
+                        onDragStart={() => canDragCol && handleColumnDragStart(colIndex)}
+                        onDragOver={(e) => opts.columnReorder && !isMetaCol && handleColumnDragOver(e, colIndex)}
                         onDragEnd={handleColumnDragEnd}
                       >
                         {col.field === '__drag__' ? (
-                          <span className="inline-block w-4 h-4 text-gray-400" aria-hidden>⋮⋮</span>
+                          <span className="inline-block w-4 h-4 text-gray-400 dark:text-gray-500" aria-hidden>⋮⋮</span>
                         ) : col.field === '__checkbox__' ? (
                           hasCheckboxColumn && (
                             <div onClick={(e) => e.stopPropagation()}>
@@ -400,19 +491,25 @@ export const ExcelGridInner = ({
                             <span className="inline-flex items-center gap-1">
                               {col.header ?? col.field}
                               {opts.sortable && sortBy?.col === colIndex && (
-                                <span className="text-blue-600" aria-hidden>
+                                <span className="text-blue-600 dark:text-blue-400" aria-hidden>
                                   {sortBy.dir === 'asc' ? '▲' : '▼'}
                                 </span>
                               )}
                             </span>
                             {opts.columnFilter && (
                               <input
-                                type="text"
+                                type={
+                                  col.filterType === 'number'
+                                    ? 'number'
+                                    : col.filterType === 'date'
+                                      ? 'date'
+                                      : 'text'
+                                }
                                 placeholder="필터..."
                                 value={state.columnFilters[getDataColIndexFromDisplay(colIndex, displayColumns, dataCols)] ?? ''}
                                 onChange={(e) => store.setColumnFilter(getDataColIndexFromDisplay(colIndex, displayColumns, dataCols), e.target.value)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="w-full text-xs border border-gray-300 rounded px-1 py-0.5"
+                                className="w-full text-xs border border-gray-300 dark:border-gray-600 dark:bg-gray-700/90 dark:text-gray-100 dark:placeholder-gray-400 rounded px-1 py-0.5 focus:dark:border-gray-500 focus:dark:ring-1 focus:dark:ring-gray-500 focus:dark:outline-none"
                               />
                             )}
                           </div>
@@ -429,9 +526,9 @@ export const ExcelGridInner = ({
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 min-h-0 overflow-auto"
+            className="flex-1 min-h-0 overflow-auto dark:bg-gray-900"
           >
-            <table className="w-full border-collapse border-t-0" style={useVirtualScroll ? { tableLayout: 'fixed' } : undefined}>
+            <table className="w-full border-collapse border-t-0" style={useVirtualScroll ? { tableLayout: 'fixed' } : { tableLayout: 'fixed', minWidth: tableMinWidth }}>
               <colgroup>
                 {displayColumns.map((col) => (
                   <col key={col.field} style={col.width != null ? { width: col.width, minWidth: col.width } : undefined} />
@@ -459,11 +556,20 @@ export const ExcelGridInner = ({
                     : undefined
                 }
                 rowDraggable={opts.rowDraggable}
+                rowDragColumnIndex={rowDragColumnIndex >= 0 ? rowDragColumnIndex : undefined}
+                onRowReorderDrop={opts.onRowOrderChange ? handleRowReorderDrop : undefined}
                 onDropRows={opts.onDropRows ? handleDropRows : undefined}
-                onDragOverRows={opts.onDropRows ? handleDragOverRows : undefined}
+                onDragOverRows={opts.onDropRows || opts.onRowOrderChange ? handleDragOverRows : undefined}
+                onDragLeaveGrid={opts.onDropRows || opts.onRowOrderChange ? handleDragLeaveGrid : undefined}
+                dropInsertBeforeIndex={dropInsertBeforeIndex}
+                totalRowCount={totalVirtualRows}
                 multiSelect={opts.multiSelect}
                 onRowClick={opts.multiSelect ? handleMultiSelectRow : undefined}
                 getRowsForIndices={opts.rowDraggable ? getRowsForIndices : undefined}
+                isRowLoading={opts.isRowLoading}
+                getCellClassName={opts.getCellClassName}
+                onEditingBlur={commitEditingCell}
+                onEditingChange={opts.editable ? handleEditingChange : undefined}
               />
             </table>
           </div>

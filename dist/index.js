@@ -1302,11 +1302,15 @@ var ExcelGridProvider = /* @__PURE__ */ __name(({
   multiSelect = false,
   rowDraggable = false,
   onDropRows,
+  onRowOrderChange,
   onAddRow,
+  isRowLoading,
+  getCellClassName,
   exportFileName,
   exportImportDelimiter = ",",
   onImport,
   onChange,
+  onCellChange,
   children
 }) => {
   const gridRef = useRef2(null);
@@ -1315,9 +1319,25 @@ var ExcelGridProvider = /* @__PURE__ */ __name(({
   if (!storeRef.current) storeRef.current = createGridStore();
   const store = storeRef.current;
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  const initOptions = useMemo5(
+    () => ({ checkboxSelection, rowDraggable }),
+    [checkboxSelection, rowDraggable]
+  );
+  const hasInitedRef = useRef2(false);
+  const prevColumnsRef = useRef2(columns);
+  const prevOptionsRef = useRef2(initOptions);
   useEffect2(() => {
-    store.initStore(rows, columns, { checkboxSelection, rowDraggable });
-  }, [rows, columns, checkboxSelection, rowDraggable, store]);
+    const columnsChanged = prevColumnsRef.current !== columns || prevColumnsRef.current?.length !== columns?.length;
+    const optionsChanged = prevOptionsRef.current.checkboxSelection !== initOptions.checkboxSelection || prevOptionsRef.current.rowDraggable !== initOptions.rowDraggable;
+    if (!hasInitedRef.current || columnsChanged || optionsChanged) {
+      store.initStore(rows, columns, initOptions);
+      hasInitedRef.current = true;
+      prevColumnsRef.current = columns;
+      prevOptionsRef.current = initOptions;
+    } else {
+      store.setRows(rows);
+    }
+  }, [rows, columns, initOptions, store]);
   const getEditingValue = useCallback2(() => {
     const root = gridRef.current;
     const s = store.getState();
@@ -1342,6 +1362,7 @@ var ExcelGridProvider = /* @__PURE__ */ __name(({
       getEditingValue,
       editable: !!editable,
       onChange,
+      onCellChange,
       sortable,
       searchPlaceholder,
       columnFilter,
@@ -1352,7 +1373,10 @@ var ExcelGridProvider = /* @__PURE__ */ __name(({
       multiSelect,
       rowDraggable,
       onDropRows,
+      onRowOrderChange,
       onAddRow,
+      isRowLoading,
+      getCellClassName,
       exportFileName,
       exportImportDelimiter,
       onImport
@@ -1363,6 +1387,7 @@ var ExcelGridProvider = /* @__PURE__ */ __name(({
       getEditingValue,
       editable,
       onChange,
+      onCellChange,
       sortable,
       searchPlaceholder,
       columnFilter,
@@ -1373,7 +1398,10 @@ var ExcelGridProvider = /* @__PURE__ */ __name(({
       multiSelect,
       rowDraggable,
       onDropRows,
+      onRowOrderChange,
       onAddRow,
+      isRowLoading,
+      getCellClassName,
       exportFileName,
       exportImportDelimiter,
       onImport
@@ -1411,7 +1439,10 @@ var GridViewport = forwardRef4(
       role: "grid",
       tabIndex: 0,
       draggable: false,
-      onDragStart: (e) => e.preventDefault(),
+      onDragStart: (e) => {
+        if (e.target?.closest?.("tr[data-row-index]")) return;
+        e.preventDefault();
+      },
       onKeyDown,
       onPointerDown,
       onPointerMove,
@@ -1422,6 +1453,9 @@ var GridViewport = forwardRef4(
   )
 );
 GridViewport.displayName = "GridViewport";
+
+// src/components/molecules/ExcelGrid/core/GridBody.tsx
+import { Fragment as Fragment4 } from "react";
 
 // src/components/molecules/ExcelGrid/core/GridCell.tsx
 import { jsx as jsx21, jsxs as jsxs8 } from "react/jsx-runtime";
@@ -1436,11 +1470,16 @@ var GridCell = /* @__PURE__ */ __name(({
   editor = "text",
   dropdownOptions = [],
   pinnedStyle,
-  className
+  className,
+  onEditingBlur,
+  onEditingChange
 }) => {
   const displayValue = value == null ? "" : String(value);
   const dataAttrs = { "data-row": rowIndex, "data-col": colIndex };
-  const inputClass = "w-full min-w-0 border-0 bg-transparent px-0 py-0 text-sm outline-none";
+  const editorInputClass = "w-full min-w-0 text-sm outline-none rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-1.5 py-0.5 focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-500 dark:placeholder-gray-400";
+  const editorSelectClass = "w-full min-w-0 text-sm outline-none rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-1.5 py-0.5 focus:ring-2 focus:ring-blue-400 dark:focus:ring-blue-500 appearance-none cursor-pointer";
+  const blurHandler = onEditingBlur ? { onBlur: onEditingBlur } : {};
+  const changeHandler = onEditingChange ? { onChange: /* @__PURE__ */ __name((e) => onEditingChange(e.target.value), "onChange") } : {};
   const renderEditor = /* @__PURE__ */ __name(() => {
     if (editor === "datetime") {
       const iso = displayValue ? new Date(displayValue).toISOString().slice(0, 16) : "";
@@ -1448,9 +1487,11 @@ var GridCell = /* @__PURE__ */ __name(({
         "input",
         {
           type: "datetime-local",
-          defaultValue: iso,
-          className: inputClass,
+          value: iso,
+          className: editorInputClass,
           ...dataAttrs,
+          ...blurHandler,
+          ...changeHandler,
           "aria-label": `Cell ${rowIndex} ${colIndex}`
         }
       );
@@ -1459,9 +1500,11 @@ var GridCell = /* @__PURE__ */ __name(({
       return /* @__PURE__ */ jsxs8(
         "select",
         {
-          defaultValue: displayValue,
-          className: inputClass,
+          value: displayValue,
+          className: editorSelectClass,
           ...dataAttrs,
+          ...blurHandler,
+          ...changeHandler,
           "aria-label": `Cell ${rowIndex} ${colIndex}`,
           children: [
             /* @__PURE__ */ jsx21("option", { value: "", children: "\uC120\uD0DD" }),
@@ -1474,9 +1517,11 @@ var GridCell = /* @__PURE__ */ __name(({
       "input",
       {
         type: "text",
-        defaultValue: displayValue,
-        className: inputClass,
+        value: displayValue,
+        className: editorInputClass,
         ...dataAttrs,
+        ...blurHandler,
+        ...changeHandler,
         "aria-label": `Cell ${rowIndex} ${colIndex}`
       }
     );
@@ -1488,9 +1533,11 @@ var GridCell = /* @__PURE__ */ __name(({
       "data-row": rowIndex,
       "data-col": colIndex,
       className: cn(
-        "border-b border-r border-gray-200 px-2 py-1 text-sm outline-none",
-        selected && "bg-blue-100 ring-1 ring-blue-300 ring-inset",
-        focused && "ring-2 ring-blue-500 ring-inset z-[1]",
+        "border-b border-r border-gray-200 dark:border-gray-700 px-2 py-1 text-sm outline-none text-gray-900 dark:text-gray-100",
+        pinnedStyle && Object.keys(pinnedStyle).length > 0 && "bg-white dark:bg-gray-800",
+        editing && "bg-blue-50/80 dark:bg-blue-900/25 dark:ring-blue-500/80 ring-2 ring-blue-400 ring-inset dark:ring-blue-500 z-[1]",
+        selected && !editing && "bg-blue-100 ring-1 ring-blue-300 ring-inset dark:bg-blue-900/35 dark:ring-blue-500",
+        focused && !editing && "ring-2 ring-blue-500 ring-inset z-[1] dark:ring-blue-400",
         className
       ),
       style: {
@@ -1513,21 +1560,32 @@ var isCellInRange = /* @__PURE__ */ __name((row, col, range) => {
 
 // src/components/molecules/ExcelGrid/model/columnModel.ts
 var DEFAULT_COL_WIDTH = 100;
+var getEffectivePinned = /* @__PURE__ */ __name((col) => {
+  const p = col.pinned;
+  if (p === true || p === "left") return "left";
+  if (p === "right") return "right";
+  const init = col.initialPinned;
+  if (init === true || init === "left") return "left";
+  if (init === "right") return "right";
+  return void 0;
+}, "getEffectivePinned");
 var getPinnedOffset = /* @__PURE__ */ __name((columns, colIndex, side) => {
   const col = columns[colIndex];
-  if (!col || col.pinned !== side) return 0;
+  if (!col || getEffectivePinned(col) !== side) return 0;
   const w = /* @__PURE__ */ __name((i) => columns[i]?.width ?? DEFAULT_COL_WIDTH, "w");
   if (side === "left") {
     let sum2 = 0;
-    for (let i = 0; i < colIndex; i++) if (columns[i]?.pinned === "left") sum2 += w(i);
+    for (let i = 0; i < colIndex; i++) if (getEffectivePinned(columns[i]) === "left") sum2 += w(i);
     return sum2;
   }
   let sum = 0;
-  for (let i = colIndex + 1; i < columns.length; i++) if (columns[i]?.pinned === "right") sum += w(i);
+  for (let i = colIndex + 1; i < columns.length; i++)
+    if (getEffectivePinned(columns[i]) === "right") sum += w(i);
   return sum;
 }, "getPinnedOffset");
 var getColumnByIndex = /* @__PURE__ */ __name((columns, colIndex) => columns[colIndex], "getColumnByIndex");
 var clampColIndex = /* @__PURE__ */ __name((columns, col) => Math.max(0, Math.min(col, columns.length - 1)), "clampColIndex");
+var getTableMinWidth = /* @__PURE__ */ __name((columns) => columns.reduce((sum, c) => sum + (c.width ?? DEFAULT_COL_WIDTH), 0), "getTableMinWidth");
 var getDisplayColumns = /* @__PURE__ */ __name((columns, columnOrder) => {
   const hasDrag = columns[0]?.field === "__drag__";
   const hasCheckbox = columns[hasDrag ? 1 : 0]?.field === "__checkbox__";
@@ -1537,9 +1595,9 @@ var getDisplayColumns = /* @__PURE__ */ __name((columns, columnOrder) => {
     return columns;
   }
   const reordered = columnOrder.map((i) => dataCols[i]).filter(Boolean);
-  const left = reordered.filter((c) => c.pinned === "left");
-  const center = reordered.filter((c) => c.pinned !== "left" && c.pinned !== "right");
-  const right = reordered.filter((c) => c.pinned === "right");
+  const left = reordered.filter((c) => getEffectivePinned(c) === "left");
+  const center = reordered.filter((c) => getEffectivePinned(c) !== "left" && getEffectivePinned(c) !== "right");
+  const right = reordered.filter((c) => getEffectivePinned(c) === "right");
   const ordered = [...left, ...center, ...right];
   const prefix = [...hasDrag ? [columns[0]] : [], ...hasCheckbox ? [columns[hasDrag ? 1 : 0]] : []];
   return [...prefix, ...ordered];
@@ -1551,25 +1609,33 @@ var MAX_PREVIEW_ROWS = 5;
 var createDragPreview = /* @__PURE__ */ __name((rows, columns, dt) => {
   const dataCols = columns.filter((c) => c.field !== "__checkbox__" && c.field !== "__drag__").slice(0, MAX_PREVIEW_COLS);
   if (dataCols.length === 0) return;
+  const isDark = document.documentElement.classList.contains("dark");
+  const bg = isDark ? "#1f2937" : "white";
+  const border = isDark ? "#4b5563" : "#e5e7eb";
+  const text = isDark ? "#e5e7eb" : "#374151";
+  const headerBg = isDark ? "#374151" : "#f3f4f6";
+  const rowBorder = isDark ? "#374151" : "#f3f4f6";
+  const footerBg = isDark ? "#374151" : "#f9fafb";
+  const footerText = isDark ? "#9ca3af" : "#6b7280";
   const el = document.createElement("div");
   el.setAttribute("role", "presentation");
   el.style.cssText = [
     "position:absolute;top:-9999px;left:-9999px;",
     "padding:0;min-width:80px;max-width:320px;max-height:200px;overflow:hidden;",
-    "background:white;border:1px solid #e5e7eb;border-radius:6px;",
+    `background:${bg};border:1px solid ${border};border-radius:6px;`,
     "box-shadow:0 4px 12px rgba(0,0,0,0.15);",
-    "font-size:11px;color:#374151;",
+    `font-size:11px;color:${text};`,
     "pointer-events:none;z-index:9999;"
   ].join("");
   const table = document.createElement("table");
   table.style.cssText = "border-collapse:collapse;width:100%;table-layout:fixed;";
   table.setAttribute("role", "presentation");
   const thead = document.createElement("thead");
-  thead.style.background = "#f3f4f6";
+  thead.style.background = headerBg;
   const headerRow = document.createElement("tr");
   dataCols.forEach((col) => {
     const th = document.createElement("th");
-    th.style.cssText = "padding:4px 6px;text-align:left;border-bottom:1px solid #e5e7eb;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;";
+    th.style.cssText = `padding:4px 6px;text-align:left;border-bottom:1px solid ${border};font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;color:${text};`;
     th.textContent = col.header ?? col.field;
     headerRow.appendChild(th);
   });
@@ -1581,7 +1647,7 @@ var createDragPreview = /* @__PURE__ */ __name((rows, columns, dt) => {
     const tr = document.createElement("tr");
     dataCols.forEach((col) => {
       const td = document.createElement("td");
-      td.style.cssText = "padding:4px 6px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;";
+      td.style.cssText = `padding:4px 6px;border-bottom:1px solid ${rowBorder};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;color:${text};`;
       const val = row[col.field];
       td.textContent = val != null ? String(val) : "";
       tr.appendChild(td);
@@ -1592,7 +1658,7 @@ var createDragPreview = /* @__PURE__ */ __name((rows, columns, dt) => {
   el.appendChild(table);
   if (rows.length > MAX_PREVIEW_ROWS) {
     const footer = document.createElement("div");
-    footer.style.cssText = "padding:2px 6px;background:#f9fafb;font-size:10px;color:#6b7280;";
+    footer.style.cssText = `padding:2px 6px;background:${footerBg};font-size:10px;color:${footerText};`;
     footer.textContent = `\uC678 ${rows.length - MAX_PREVIEW_ROWS}\uD589`;
     el.appendChild(footer);
   }
@@ -1602,8 +1668,9 @@ var createDragPreview = /* @__PURE__ */ __name((rows, columns, dt) => {
 }, "createDragPreview");
 
 // src/components/molecules/ExcelGrid/core/GridRow.tsx
-import { jsx as jsx22 } from "react/jsx-runtime";
+import { jsx as jsx22, jsxs as jsxs9 } from "react/jsx-runtime";
 var EXCEL_GRID_ROWS_TYPE = "application/x-excelgrid-rows";
+var ROW_REORDER_TYPE = "application/x-excelgrid-row-reorder";
 var GridRow = /* @__PURE__ */ __name(({
   rowIndex,
   row,
@@ -1617,12 +1684,24 @@ var GridRow = /* @__PURE__ */ __name(({
   isPinned,
   pinnedRowIndex = 0,
   rowDraggable,
+  rowDragColumnIndex,
+  onRowReorderDrop,
   rowHeight,
   onRowClick,
   getRowsForIndices,
   selectedRowIndices = [],
+  isRowLoading,
+  getCellClassName,
+  onEditingBlur,
+  onEditingChange,
   className
 }) => {
+  const handleRowReorderDragStart = /* @__PURE__ */ __name((e) => {
+    e.dataTransfer.setData(ROW_REORDER_TYPE, JSON.stringify({ fromDisplayedIndex: rowIndex }));
+    e.dataTransfer.effectAllowed = "move";
+    e.stopPropagation();
+    createDragPreview([row], columns, e.dataTransfer);
+  }, "handleRowReorderDragStart");
   const handleDragStart = /* @__PURE__ */ __name((e) => {
     if (!rowDraggable) return;
     let rowsToDrag;
@@ -1650,27 +1729,55 @@ var GridRow = /* @__PURE__ */ __name(({
   const handleDragEnd = /* @__PURE__ */ __name((e) => {
     e.currentTarget.style.cursor = "grab";
   }, "handleDragEnd");
+  const handleRowReorderDragOver = /* @__PURE__ */ __name((e) => {
+    if (!e.dataTransfer.types.includes(ROW_REORDER_TYPE) || !onRowReorderDrop) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+  }, "handleRowReorderDragOver");
+  const handleRowReorderDrop = /* @__PURE__ */ __name((e) => {
+    if (!e.dataTransfer.types.includes(ROW_REORDER_TYPE) || !onRowReorderDrop) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const raw = e.dataTransfer.getData(ROW_REORDER_TYPE);
+      const { fromDisplayedIndex } = JSON.parse(raw);
+      if (typeof fromDisplayedIndex === "number") onRowReorderDrop(fromDisplayedIndex, rowIndex);
+    } catch {
+    }
+  }, "handleRowReorderDrop");
   const rowStyle = {
     ...rowHeight != null ? { height: rowHeight, minHeight: rowHeight } : {},
     ...rowDraggable ? { cursor: "grab" } : {},
     ...isPinned ? {
       position: "sticky",
       top: pinnedRowIndex * (rowHeight ?? 32),
-      zIndex: 5,
-      background: "white",
-      boxShadow: "0 1px 0 #e5e7eb"
+      zIndex: 5
     } : {}
   };
+  if (isRowLoading) {
+    return /* @__PURE__ */ jsx22("tr", { className: cn(className, "bg-gray-50 dark:bg-gray-800/80"), "aria-busy": true, children: /* @__PURE__ */ jsx22("td", { colSpan: columns.length, className: "border-b border-gray-200 dark:border-gray-700 px-2 py-2 text-center", children: /* @__PURE__ */ jsxs9("span", { className: "inline-flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 text-xs", children: [
+      /* @__PURE__ */ jsx22("span", { className: "animate-pulse w-4 h-4 rounded bg-gray-200", "aria-hidden": true }),
+      "\uB85C\uB529 \uC911..."
+    ] }) }) });
+  }
   return /* @__PURE__ */ jsx22(
     "tr",
     {
-      className: cn(className, isRowSelected && "bg-blue-50"),
+      className: cn(
+        className,
+        isRowSelected && "bg-blue-50 dark:bg-blue-900/25",
+        isPinned && "bg-white dark:bg-gray-800 shadow-[0_1px_0_0_rgba(229,231,235,1)] dark:shadow-[0_1px_0_0_rgba(55,65,81,1)]"
+      ),
       draggable: rowDraggable,
       onDragStart: rowDraggable ? handleDragStart : void 0,
       onDragEnd: rowDraggable ? handleDragEnd : void 0,
+      onDragOver: onRowReorderDrop ? handleRowReorderDragOver : void 0,
+      onDrop: onRowReorderDrop ? handleRowReorderDrop : void 0,
       style: Object.keys(rowStyle).length > 0 ? rowStyle : void 0,
       title: rowDraggable ? "\uD589\uC744 \uC7A1\uC544 \uB2E4\uB978 \uADF8\uB9AC\uB4DC\uB85C \uB4DC\uB798\uADF8\uD558\uC138\uC694" : void 0,
       "aria-label": rowDraggable ? `\uD589 ${rowIndex + 1} \uB4DC\uB798\uADF8 \uAC00\uB2A5` : void 0,
+      "data-row-index": rowIndex,
       onClick: (e) => {
         if (e.target.closest('input[type="checkbox"]')) return;
         if (onRowClick) {
@@ -1680,18 +1787,20 @@ var GridRow = /* @__PURE__ */ __name(({
         if (checkboxSelection && onToggleRowSelection) onToggleRowSelection();
       },
       children: columns.map((col, colIndex) => {
-        const leftPx = col.pinned === "left" ? getPinnedOffset(columns, colIndex, "left") : void 0;
-        const rightPx = col.pinned === "right" ? getPinnedOffset(columns, colIndex, "right") : void 0;
-        const pinnedStyle = leftPx !== void 0 ? { position: "sticky", left: leftPx, zIndex: 4, background: "white", boxShadow: "2px 0 2px -2px rgba(0,0,0,0.08)" } : rightPx !== void 0 ? { position: "sticky", right: rightPx, zIndex: 4, background: "white", boxShadow: "-2px 0 2px -2px rgba(0,0,0,0.08)" } : {};
+        const pinned = getEffectivePinned(col);
+        const leftPx = pinned === "left" ? getPinnedOffset(columns, colIndex, "left") : void 0;
+        const rightPx = pinned === "right" ? getPinnedOffset(columns, colIndex, "right") : void 0;
+        const pinnedStyle = leftPx !== void 0 ? { position: "sticky", left: leftPx, zIndex: 4, boxShadow: "2px 0 2px -2px rgba(0,0,0,0.08)" } : rightPx !== void 0 ? { position: "sticky", right: rightPx, zIndex: 4, boxShadow: "-2px 0 2px -2px rgba(0,0,0,0.08)" } : {};
+        const pinnedCellClass = leftPx !== void 0 || rightPx !== void 0 ? "bg-white dark:bg-gray-800" : "";
         if (col.field === "__drag__") {
           return /* @__PURE__ */ jsx22(
             "td",
             {
-              className: "border-b border-r border-gray-200 px-1 py-1 text-center align-middle",
+              className: cn("border-b border-r border-gray-200 dark:border-gray-700 px-1 py-1 text-center align-middle", pinnedCellClass),
               style: { ...col.width != null ? { width: col.width, minWidth: col.width } : {}, ...pinnedStyle },
               onClick: (e) => e.stopPropagation(),
               "aria-hidden": true,
-              children: /* @__PURE__ */ jsx22("span", { className: "inline-flex cursor-grab text-gray-400 hover:text-gray-600 select-none", title: "\uD589 \uC7A1\uC544 \uB4DC\uB798\uADF8", children: "\u22EE\u22EE" })
+              children: /* @__PURE__ */ jsx22("span", { className: "inline-flex cursor-grab text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 select-none", title: "\uD589 \uC7A1\uC544 \uB4DC\uB798\uADF8", children: "\u22EE\u22EE" })
             },
             col.field
           );
@@ -1700,7 +1809,7 @@ var GridRow = /* @__PURE__ */ __name(({
           return /* @__PURE__ */ jsx22(
             "td",
             {
-              className: "border-b border-r border-gray-200 px-2 py-1 text-sm w-10",
+              className: cn("border-b border-r border-gray-200 dark:border-gray-700 px-2 py-1 text-sm w-10", pinnedCellClass),
               style: { ...col.width != null ? { width: col.width, minWidth: col.width } : {}, ...pinnedStyle },
               onClick: (e) => e.stopPropagation(),
               children: /* @__PURE__ */ jsx22(
@@ -1709,6 +1818,29 @@ var GridRow = /* @__PURE__ */ __name(({
                   checked: !!isRowSelected,
                   onChange: () => onToggleRowSelection?.(),
                   "aria-label": `\uD589 ${rowIndex + 1} \uC120\uD0DD`
+                }
+              )
+            },
+            col.field
+          );
+        }
+        const isRowDragHandleCell = rowDragColumnIndex !== void 0 && colIndex === rowDragColumnIndex;
+        if (isRowDragHandleCell) {
+          return /* @__PURE__ */ jsx22(
+            "td",
+            {
+              className: cn("border-b border-r border-gray-200 dark:border-gray-700 px-1 py-1 text-center align-middle", pinnedCellClass),
+              style: { ...col.width != null ? { width: col.width, minWidth: col.width } : {}, ...pinnedStyle },
+              onClick: (e) => e.stopPropagation(),
+              "aria-hidden": true,
+              children: /* @__PURE__ */ jsx22(
+                "span",
+                {
+                  className: "inline-flex cursor-grab text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 select-none",
+                  title: "\uD589 \uC21C\uC11C \uBCC0\uACBD",
+                  draggable: true,
+                  onDragStart: handleRowReorderDragStart,
+                  children: "\u22EE\u22EE"
                 }
               )
             },
@@ -1731,7 +1863,10 @@ var GridRow = /* @__PURE__ */ __name(({
             width: col.width,
             editor: col.editor,
             dropdownOptions: col.dropdownOptions,
-            pinnedStyle
+            pinnedStyle,
+            className: getCellClassName?.(rowIndex, colIndex),
+            onEditingBlur,
+            onEditingChange
           },
           col.field
         );
@@ -1741,7 +1876,7 @@ var GridRow = /* @__PURE__ */ __name(({
 }, "GridRow");
 
 // src/components/molecules/ExcelGrid/core/GridBody.tsx
-import { jsx as jsx23, jsxs as jsxs9 } from "react/jsx-runtime";
+import { jsx as jsx23, jsxs as jsxs10 } from "react/jsx-runtime";
 var GridBody = /* @__PURE__ */ __name(({
   rows,
   columns,
@@ -1755,50 +1890,72 @@ var GridBody = /* @__PURE__ */ __name(({
   startRowIndex = 0,
   virtualScroll,
   rowDraggable,
+  rowDragColumnIndex,
+  onRowReorderDrop,
   onDropRows,
   onDragOverRows,
+  onDragLeaveGrid,
+  dropInsertBeforeIndex,
+  totalRowCount = 0,
   multiSelect,
   onRowClick,
   getRowsForIndices,
+  isRowLoading,
+  getCellClassName,
+  onEditingBlur,
+  onEditingChange,
   className
 }) => {
   const colCount = columns.length;
   const topHeight = virtualScroll ? virtualScroll.startIndex * virtualScroll.rowHeight : 0;
   const bottomHeight = virtualScroll ? (virtualScroll.totalRows - virtualScroll.endIndex) * virtualScroll.rowHeight : 0;
   const spacerCell = /* @__PURE__ */ __name((key, height) => /* @__PURE__ */ jsx23("tr", { "aria-hidden": true, style: { height, lineHeight: 0, fontSize: 0 }, children: /* @__PURE__ */ jsx23("td", { colSpan: colCount, style: { height, padding: 0, border: "none", verticalAlign: "top" } }) }, key), "spacerCell");
-  return /* @__PURE__ */ jsxs9(
+  const dropIndicatorLine = /* @__PURE__ */ __name((key) => /* @__PURE__ */ jsx23("tr", { "aria-hidden": true, className: "bg-blue-100 dark:bg-blue-900/30", style: { height: 0 }, children: /* @__PURE__ */ jsx23("td", { colSpan: colCount, style: { padding: 0, border: "none", verticalAlign: "top", lineHeight: 0 }, children: /* @__PURE__ */ jsx23("div", { className: "bg-blue-500 dark:bg-blue-400", style: { height: 2, margin: 0 } }) }) }, key), "dropIndicatorLine");
+  return /* @__PURE__ */ jsxs10(
     "tbody",
     {
       className: cn(className, onDropRows && "relative"),
       onDragOver: onDragOverRows,
+      onDragLeave: onDragLeaveGrid,
       onDrop: onDropRows,
       children: [
         topHeight > 0 && spacerCell("top-spacer", topHeight),
         rows.map((row, i) => {
           const rowIndex = startRowIndex + i;
-          return /* @__PURE__ */ jsx23(
-            GridRow,
-            {
-              rowIndex,
-              row,
-              columns,
-              focusedCell,
-              selectedRange,
-              editingCell,
-              checkboxSelection,
-              isRowSelected: selectedRowIndices.includes(rowIndex),
-              onToggleRowSelection: onToggleRowSelection ? () => onToggleRowSelection(rowIndex) : void 0,
-              isPinned: i < pinnedRowCount,
-              pinnedRowIndex: i,
-              rowDraggable,
-              rowHeight: virtualScroll?.rowHeight,
-              onRowClick: onRowClick ? (e) => onRowClick(rowIndex, e) : void 0,
-              getRowsForIndices,
-              selectedRowIndices
-            },
-            rowIndex
-          );
+          const showDropIndicatorBefore = dropInsertBeforeIndex === rowIndex;
+          return /* @__PURE__ */ jsxs10(Fragment4, { children: [
+            showDropIndicatorBefore && dropIndicatorLine(`drop-before-${rowIndex}`),
+            /* @__PURE__ */ jsx23(
+              GridRow,
+              {
+                rowIndex,
+                row,
+                columns,
+                focusedCell,
+                selectedRange,
+                editingCell,
+                checkboxSelection,
+                isRowSelected: selectedRowIndices.includes(rowIndex),
+                onToggleRowSelection: onToggleRowSelection ? () => onToggleRowSelection(rowIndex) : void 0,
+                isPinned: i < pinnedRowCount,
+                pinnedRowIndex: i,
+                rowDraggable,
+                rowDragColumnIndex,
+                onRowReorderDrop,
+                rowHeight: virtualScroll?.rowHeight,
+                onRowClick: onRowClick ? (e) => onRowClick(rowIndex, e) : void 0,
+                getRowsForIndices,
+                selectedRowIndices,
+                isRowLoading: isRowLoading?.(rowIndex),
+                getCellClassName,
+                onEditingBlur,
+                onEditingChange
+              },
+              rowIndex
+            )
+          ] }, rowIndex);
         }),
+        dropInsertBeforeIndex === totalRowCount && dropIndicatorLine("drop-after-last"),
         bottomHeight > 0 && spacerCell("bottom-spacer", bottomHeight)
       ]
     }
@@ -1831,13 +1988,33 @@ var compare = /* @__PURE__ */ __name((a, b) => {
   if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
   return String(a ?? "").localeCompare(String(b ?? ""), void 0, { numeric: true });
 }, "compare");
+var matchesFilter = /* @__PURE__ */ __name((value, filterValue, col) => {
+  const trimmed = filterValue.trim();
+  if (!trimmed) return true;
+  if (col.filterType === "custom" && col.filterFn) {
+    return col.filterFn(value, trimmed);
+  }
+  if (col.filterType === "number") {
+    const n = Number(value);
+    const nFilter = Number(trimmed);
+    if (!Number.isNaN(n) && !Number.isNaN(nFilter)) return n === nFilter;
+    return String(value ?? "").toLowerCase().includes(trimmed.toLowerCase());
+  }
+  if (col.filterType === "date") {
+    const d = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+    const dFilter = new Date(trimmed).getTime();
+    if (!Number.isNaN(d) && !Number.isNaN(dFilter)) return d === dFilter;
+    return String(value ?? "").toLowerCase().includes(trimmed.toLowerCase());
+  }
+  return String(value ?? "").toLowerCase().includes(trimmed.toLowerCase());
+}, "matchesFilter");
 var rowMatchesColumnFilters = /* @__PURE__ */ __name((row, columns, columnFilters) => {
-  const dataCols = columns.filter((c) => c.field !== "__checkbox__");
+  const dataCols = columns.filter((c) => c.field !== "__checkbox__" && c.field !== "__drag__");
   return dataCols.every((col, dataIdx) => {
     const filter = columnFilters[dataIdx];
     if (!filter?.trim()) return true;
     const v = getCellValue(row, col.field);
-    return String(v ?? "").toLowerCase().includes(filter.trim().toLowerCase());
+    return matchesFilter(v, filter, col);
   });
 }, "rowMatchesColumnFilters");
 var getDisplayedRows = /* @__PURE__ */ __name((rows, columns, searchText, sortBy, columnFilters = {}) => {
@@ -1943,8 +2120,12 @@ var pasteAtFocus = /* @__PURE__ */ __name((store, text, opts = {}) => {
       if (!colDef || colDef.field === "__checkbox__") continue;
       if (colDef.editable === false) continue;
       const value = line[dc];
+      const prevValue = getCellValue(nextRows[rowIndex], colDef.field);
       nextRows = setCellValue(nextRows, rowIndex, colDef.field, value);
       opts.onChange?.(rowIndex, colIndex, value);
+      if (opts.onCellChange && String(prevValue ?? "") !== String(value ?? "")) {
+        opts.onCellChange(rowIndex, colIndex, prevValue, value);
+      }
     }
   }
   store.setRows(nextRows);
@@ -1956,18 +2137,22 @@ var createKeyDownHandler = /* @__PURE__ */ __name((options) => {
   const commitEditingCell = /* @__PURE__ */ __name(() => {
     const state = store.getState();
     const { editingCell, rows, columns, columnOrder } = state;
-    if (!editingCell || !options.getEditingValue || !options.onChange) return;
+    if (!editingCell || !options.getEditingValue) return;
     const displayCols = getDisplayColumns(columns, columnOrder);
     const colDef = getColumnByIndex(displayCols, editingCell.col);
     if (!colDef || colDef.field === "__checkbox__") return;
     const value = options.getEditingValue();
     const originalRow = options.getOriginalRowIndex?.(editingCell.row) ?? editingCell.row;
+    const prevValue = getCellValue(rows[originalRow], colDef.field);
     const nextRows = setCellValue(rows, originalRow, colDef.field, value);
     store.setRows(nextRows);
-    options.onChange(originalRow, editingCell.col, value);
+    if (options.onChange) options.onChange(originalRow, editingCell.col, value);
+    if (options.onCellChange && String(prevValue ?? "") !== String(value ?? "")) {
+      options.onCellChange(originalRow, editingCell.col, prevValue, value);
+    }
     store.setState({ editingCell: null });
   }, "commitEditingCell");
-  return (event) => {
+  const handleKeyDown = /* @__PURE__ */ __name((event) => {
     const state = store.getState();
     const { focusedCell, editingCell, rows, columns, columnOrder } = state;
     const displayCols = getDisplayColumns(columns, columnOrder);
@@ -2002,6 +2187,7 @@ var createKeyDownHandler = /* @__PURE__ */ __name((options) => {
       navigator.clipboard.readText().then((t) => {
         pasteAtFocus(store, t, {
           onChange: options.onChange,
+          onCellChange: options.onCellChange,
           getOriginalRowIndex: options.getOriginalRowIndex,
           editable: options.editable
         });
@@ -2044,7 +2230,8 @@ var createKeyDownHandler = /* @__PURE__ */ __name((options) => {
       default:
         break;
     }
-  };
+  }, "handleKeyDown");
+  return { handleKeyDown, commitEditingCell };
 }, "createKeyDownHandler");
 
 // src/components/molecules/ExcelGrid/controller/mouse.ts
@@ -2057,11 +2244,22 @@ var getCellFromEvent = /* @__PURE__ */ __name((e) => {
   if (row == null || col == null) return null;
   return { row: parseInt(row, 10), col: parseInt(col, 10) };
 }, "getCellFromEvent");
+var isInteractiveTarget = /* @__PURE__ */ __name((e) => !!e.target.closest?.('select, input, button, [role="combobox"]'), "isInteractiveTarget");
 var createPointerHandlers = /* @__PURE__ */ __name((store, options) => {
   let isDragSelecting = false;
   const handlePointerDown = /* @__PURE__ */ __name((e) => {
     const cell = getCellFromEvent(e);
     if (!cell) return;
+    const state = store.getState();
+    const { editingCell } = state;
+    const isClickingOtherCell = editingCell && (editingCell.row !== cell.row || editingCell.col !== cell.col);
+    if (isClickingOtherCell && options.commitEditingCell) {
+      options.commitEditingCell();
+    }
+    if (isInteractiveTarget(e)) {
+      moveFocus(store, cell.row, cell.col);
+      return;
+    }
     e.preventDefault();
     isDragSelecting = true;
     moveFocus(store, cell.row, cell.col);
@@ -2174,7 +2372,7 @@ var downloadTableAsFile = /* @__PURE__ */ __name((content, filename, mimeType = 
 }, "downloadTableAsFile");
 
 // src/components/molecules/ExcelGrid/ExcelGridInner.tsx
-import { Fragment as Fragment4, jsx as jsx24, jsxs as jsxs10 } from "react/jsx-runtime";
+import { Fragment as Fragment5, jsx as jsx24, jsxs as jsxs11 } from "react/jsx-runtime";
 var getDataColIndexFromDisplay = /* @__PURE__ */ __name((displayColIndex, displayColumns, dataCols) => {
   const col = displayColumns[displayColIndex];
   if (!col || col.field === "__checkbox__" || col.field === "__drag__") return -1;
@@ -2191,19 +2389,24 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
   const { store } = opts;
   const [page, setPage] = useState3(1);
   const [columnDragIndex, setColumnDragIndex] = useState3(null);
-  const handleKeyDown = useMemo6(
+  const [dropInsertBeforeIndex, setDropInsertBeforeIndex] = useState3(null);
+  const { handleKeyDown, commitEditingCell } = useMemo6(
     () => createKeyDownHandler({
       store,
       editable: opts.editable,
       onChange: opts.onChange,
+      onCellChange: opts.onCellChange,
       getEditingValue: opts.getEditingValue,
       getOriginalRowIndex: /* @__PURE__ */ __name((i) => getOriginalRowIndexRef.current?.(i) ?? i, "getOriginalRowIndex")
     }),
-    [store, opts.editable, opts.onChange, opts.getEditingValue]
+    [store, opts.editable, opts.onChange, opts.onCellChange, opts.getEditingValue]
   );
   const pointerHandlers = useMemo6(
-    () => createPointerHandlers(store, { editable: opts.editable }),
-    [store, opts.editable]
+    () => createPointerHandlers(store, {
+      editable: opts.editable,
+      commitEditingCell
+    }),
+    [store, opts.editable, commitEditingCell]
   );
   const fileInputRef = useRef3(null);
   const scrollContainerRef = useRef3(null);
@@ -2249,6 +2452,10 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
   const virtualStartRowIndex = useVirtualScroll ? virtualStart : pagination ? (currentPage - 1) * pageSize : 0;
   const hasCheckboxColumn = displayColumns.some((c) => c.field === "__checkbox__");
   const hasDragColumn = displayColumns.some((c) => c.field === "__drag__");
+  const rowDragColumnIndex = useMemo6(
+    () => displayColumns.findIndex((c) => c.rowDrag === true),
+    [displayColumns]
+  );
   const columnOrder = state.columnOrder;
   const dataCols = useMemo6(
     () => state.columns.filter((c) => c.field !== "__checkbox__" && c.field !== "__drag__"),
@@ -2351,18 +2558,67 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
       if (!raw || !opts.onDropRows) return;
       try {
         const rows = JSON.parse(raw);
-        if (Array.isArray(rows) && rows.length > 0) opts.onDropRows(rows);
+        if (Array.isArray(rows) && rows.length > 0) {
+          const insertAtIndex = dropInsertBeforeIndex ?? totalVirtualRows;
+          opts.onDropRows(rows, insertAtIndex);
+        }
       } catch {
       }
+      setDropInsertBeforeIndex(null);
     },
-    [opts.onDropRows]
+    [opts.onDropRows, dropInsertBeforeIndex, totalVirtualRows]
   );
-  const handleDragOverRows = useCallback3((e) => {
-    if (!e.dataTransfer.types.includes("application/x-excelgrid-rows")) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "copy";
+  const handleDragOverRows = useCallback3(
+    (e) => {
+      const isReorder = e.dataTransfer.types.includes("application/x-excelgrid-row-reorder");
+      const isRows = e.dataTransfer.types.includes("application/x-excelgrid-rows");
+      if (isReorder) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+      } else if (isRows) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "copy";
+      } else return;
+      if (isReorder || isRows) {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const tr = el?.closest("tr[data-row-index]");
+        if (tr) {
+          const idx = parseInt(tr.getAttribute("data-row-index") ?? "", 10);
+          if (!Number.isNaN(idx)) {
+            const rect = tr.getBoundingClientRect();
+            const insertBefore = e.clientY < rect.top + rect.height / 2 ? idx : idx + 1;
+            setDropInsertBeforeIndex(Math.min(insertBefore, totalVirtualRows));
+            return;
+          }
+        }
+        setDropInsertBeforeIndex(totalVirtualRows);
+      }
+    },
+    [totalVirtualRows]
+  );
+  const handleDragLeaveGrid = useCallback3(() => {
+    setDropInsertBeforeIndex(null);
   }, []);
+  const handleRowReorderDrop = useCallback3(
+    (fromDisplayedIndex, toDisplayedIndex) => {
+      if (fromDisplayedIndex === toDisplayedIndex) return;
+      setDropInsertBeforeIndex(null);
+      const { rows } = store.getState();
+      const fromOriginal = displayedRows[fromDisplayedIndex]?.originalIndex ?? fromDisplayedIndex;
+      const toOriginal = displayedRows[toDisplayedIndex]?.originalIndex ?? toDisplayedIndex;
+      if (fromOriginal < 0 || toOriginal < 0 || fromOriginal >= rows.length || toOriginal >= rows.length) return;
+      const newRows = [...rows];
+      const [removed] = newRows.splice(fromOriginal, 1);
+      let insertAt = toOriginal;
+      if (fromOriginal < toOriginal) insertAt -= 1;
+      newRows.splice(insertAt, 0, removed);
+      store.setRows(newRows);
+      opts.onRowOrderChange?.(newRows);
+    },
+    [displayedRows, store, opts.onRowOrderChange]
+  );
   const handleMultiSelectRow = useCallback3(
     (rowIndex, e) => {
       const anchor = selectionAnchorRef.current;
@@ -2390,9 +2646,30 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
     (indices) => indices.map((i) => displayedRows[i]?.row).filter((r) => r != null),
     [displayedRows]
   );
+  const handleEditingChange = useCallback3(
+    (newValue) => {
+      const s = store.getState();
+      const { editingCell: editingCell2, rows, columns, columnOrder: columnOrder2 } = s;
+      if (!editingCell2) return;
+      const displayCols = getDisplayColumns(columns, columnOrder2);
+      const colDef = getColumnByIndex(displayCols, editingCell2.col);
+      if (!colDef || colDef.field === "__checkbox__" || colDef.field === "__drag__") return;
+      const originalRow = getOriginalRowIndexRef.current?.(editingCell2.row) ?? editingCell2.row;
+      const prevValue = getCellValue(rows[originalRow], colDef.field);
+      const nextRows = setCellValue(rows, originalRow, colDef.field, newValue);
+      store.setRows(nextRows);
+      opts.onChange?.(originalRow, editingCell2.col, newValue);
+      if (opts.onCellChange && String(prevValue ?? "") !== String(newValue ?? "")) {
+        opts.onCellChange(originalRow, editingCell2.col, prevValue, newValue);
+      }
+    },
+    [store, opts.onChange, opts.onCellChange]
+  );
   const pinnedRowCount = opts.pinnedRowCount ?? 0;
-  return /* @__PURE__ */ jsxs10(GridRoot, { className, style, children: [
-    /* @__PURE__ */ jsxs10("div", { className: "flex flex-wrap items-center gap-2 mb-2", children: [
+  const hasPinnedColumn = displayColumns.some((c) => getEffectivePinned(c) != null);
+  const tableMinWidth = hasPinnedColumn ? getTableMinWidth(displayColumns) : void 0;
+  return /* @__PURE__ */ jsxs11(GridRoot, { className, style, children: [
+    /* @__PURE__ */ jsxs11("div", { className: "flex flex-wrap items-center gap-2 mb-2", children: [
       opts.searchPlaceholder != null && /* @__PURE__ */ jsx24(
         Input,
         {
@@ -2404,9 +2681,9 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
         }
       ),
       opts.onAddRow && /* @__PURE__ */ jsx24(Button, { type: "button", variant: "secondary", size: "sm", onClick: opts.onAddRow, children: "\uD589 \uCD94\uAC00" }),
-      opts.exportFileName && /* @__PURE__ */ jsxs10(Fragment4, { children: [
+      opts.exportFileName && /* @__PURE__ */ jsxs11(Fragment5, { children: [
         /* @__PURE__ */ jsx24(Button, { type: "button", variant: "secondary", size: "sm", onClick: handleExport, children: "Export" }),
-        opts.onImport && /* @__PURE__ */ jsxs10(Fragment4, { children: [
+        opts.onImport && /* @__PURE__ */ jsxs11(Fragment5, { children: [
           /* @__PURE__ */ jsx24(
             "input",
             {
@@ -2439,32 +2716,37 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
         onPointerMove: pointerHandlers.handlePointerMove,
         onPointerUp: pointerHandlers.handlePointerUp,
         onDoubleClick: pointerHandlers.handleDoubleClick,
-        children: /* @__PURE__ */ jsxs10(
+        children: /* @__PURE__ */ jsxs11(
           "div",
           {
-            className: "flex flex-col border border-gray-200 rounded overflow-hidden",
+            className: "flex flex-col border border-gray-200 dark:border-gray-700 rounded overflow-hidden dark:bg-gray-900",
             style: useVirtualScroll ? { maxHeight: maxScrollHeight, minHeight: 0 } : void 0,
             children: [
               /* @__PURE__ */ jsx24(
                 "div",
                 {
                   ref: headerScrollRef,
-                  className: "bg-gray-100 overflow-x-auto overflow-y-hidden shrink-0",
+                  className: "bg-gray-100 dark:bg-gray-800/95 dark:border-b dark:border-gray-700 overflow-x-auto overflow-y-hidden shrink-0",
                   style: { scrollbarWidth: "none", msOverflowStyle: "none" },
-                  children: /* @__PURE__ */ jsxs10("table", { className: "w-full border-collapse", style: { tableLayout: "fixed" }, children: [
+                  children: /* @__PURE__ */ jsxs11("table", { className: "w-full border-collapse", style: { tableLayout: "fixed" }, children: [
                     /* @__PURE__ */ jsx24("colgroup", { children: displayColumns.map((col, i) => /* @__PURE__ */ jsx24("col", { style: col.width != null ? { width: col.width, minWidth: col.width } : void 0 }, col.field)) }),
                     /* @__PURE__ */ jsx24("thead", { children: /* @__PURE__ */ jsx24("tr", { children: displayColumns.map((col, colIndex) => {
-                      const leftPx = col.pinned === "left" ? getPinnedOffset(displayColumns, colIndex, "left") : void 0;
-                      const rightPx = col.pinned === "right" ? getPinnedOffset(displayColumns, colIndex, "right") : void 0;
-                      const stickyStyle = leftPx !== void 0 ? { position: "sticky", left: leftPx, zIndex: 11, background: "#f3f4f6", boxShadow: "2px 0 2px -2px rgba(0,0,0,0.1)" } : rightPx !== void 0 ? { position: "sticky", right: rightPx, zIndex: 11, background: "#f3f4f6", boxShadow: "-2px 0 2px -2px rgba(0,0,0,0.1)" } : {};
+                      const pinned = getEffectivePinned(col);
+                      const leftPx = pinned === "left" ? getPinnedOffset(displayColumns, colIndex, "left") : void 0;
+                      const rightPx = pinned === "right" ? getPinnedOffset(displayColumns, colIndex, "right") : void 0;
+                      const stickyStyle = leftPx !== void 0 ? { position: "sticky", left: leftPx, zIndex: 11, boxShadow: "2px 0 2px -2px rgba(0,0,0,0.1)" } : rightPx !== void 0 ? { position: "sticky", right: rightPx, zIndex: 11, boxShadow: "-2px 0 2px -2px rgba(0,0,0,0.1)" } : {};
+                      const stickyThClass = leftPx !== void 0 || rightPx !== void 0 ? "bg-gray-100 dark:bg-gray-800/95" : "";
                       const isMetaCol = col.field === "__checkbox__" || col.field === "__drag__";
+                      const colMovable = "movable" in col ? col.movable !== false : true;
+                      const canDragCol = opts.columnReorder && !isMetaCol && colMovable;
                       return /* @__PURE__ */ jsx24(
                         "th",
                         {
                           className: cn(
-                            "border-b border-r border-gray-200 px-2 py-2 text-left text-xs font-medium text-gray-700",
-                            opts.sortable && !isMetaCol && "cursor-pointer select-none hover:bg-gray-200",
-                            opts.columnReorder && !isMetaCol && "cursor-grab",
+                            "border-b border-r border-gray-200 dark:border-gray-700 px-2 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-100",
+                            stickyThClass,
+                            opts.sortable && !isMetaCol && "cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-gray-700/80",
+                            canDragCol && "cursor-grab",
                             columnDragIndex === colIndex && "opacity-50"
                           ),
                           style: {
@@ -2472,11 +2754,11 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
                             ...stickyStyle
                           },
                           onClick: opts.sortable && !isMetaCol ? () => handleHeaderSort(colIndex) : void 0,
-                          draggable: opts.columnReorder && !isMetaCol,
-                          onDragStart: () => opts.columnReorder && handleColumnDragStart(colIndex),
-                          onDragOver: (e) => opts.columnReorder && handleColumnDragOver(e, colIndex),
+                          draggable: canDragCol,
+                          onDragStart: () => canDragCol && handleColumnDragStart(colIndex),
+                          onDragOver: (e) => opts.columnReorder && !isMetaCol && handleColumnDragOver(e, colIndex),
                           onDragEnd: handleColumnDragEnd,
-                          children: col.field === "__drag__" ? /* @__PURE__ */ jsx24("span", { className: "inline-block w-4 h-4 text-gray-400", "aria-hidden": true, children: "\u22EE\u22EE" }) : col.field === "__checkbox__" ? hasCheckboxColumn && /* @__PURE__ */ jsx24("div", { onClick: (e) => e.stopPropagation(), children: /* @__PURE__ */ jsx24(
+                          children: col.field === "__drag__" ? /* @__PURE__ */ jsx24("span", { className: "inline-block w-4 h-4 text-gray-400 dark:text-gray-500", "aria-hidden": true, children: "\u22EE\u22EE" }) : col.field === "__checkbox__" ? hasCheckboxColumn && /* @__PURE__ */ jsx24("div", { onClick: (e) => e.stopPropagation(), children: /* @__PURE__ */ jsx24(
                             IndeterminateCheckbox,
                             {
                               checked: totalVirtualRows > 0 && selectedRowIndices.length === totalVirtualRows,
@@ -2484,20 +2766,20 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
                               onChange: () => store.toggleAllRowsSelection(totalVirtualRows),
                               "aria-label": "\uC804\uCCB4 \uC120\uD0DD"
                             }
-                          ) }) : /* @__PURE__ */ jsxs10("div", { className: "flex flex-col gap-1", children: [
-                            /* @__PURE__ */ jsxs10("span", { className: "inline-flex items-center gap-1", children: [
+                          ) }) : /* @__PURE__ */ jsxs11("div", { className: "flex flex-col gap-1", children: [
+                            /* @__PURE__ */ jsxs11("span", { className: "inline-flex items-center gap-1", children: [
                               col.header ?? col.field,
-                              opts.sortable && sortBy?.col === colIndex && /* @__PURE__ */ jsx24("span", { className: "text-blue-600", "aria-hidden": true, children: sortBy.dir === "asc" ? "\u25B2" : "\u25BC" })
+                              opts.sortable && sortBy?.col === colIndex && /* @__PURE__ */ jsx24("span", { className: "text-blue-600 dark:text-blue-400", "aria-hidden": true, children: sortBy.dir === "asc" ? "\u25B2" : "\u25BC" })
                             ] }),
                             opts.columnFilter && /* @__PURE__ */ jsx24(
                               "input",
                               {
-                                type: "text",
+                                type: col.filterType === "number" ? "number" : col.filterType === "date" ? "date" : "text",
                                 placeholder: "\uD544\uD130...",
                                 value: state.columnFilters[getDataColIndexFromDisplay(colIndex, displayColumns, dataCols)] ?? "",
                                 onChange: (e) => store.setColumnFilter(getDataColIndexFromDisplay(colIndex, displayColumns, dataCols), e.target.value),
                                 onClick: (e) => e.stopPropagation(),
-                                className: "w-full text-xs border border-gray-300 rounded px-1 py-0.5"
+                                className: "w-full text-xs border border-gray-300 dark:border-gray-600 dark:bg-gray-700/90 dark:text-gray-100 dark:placeholder-gray-400 rounded px-1 py-0.5 focus:dark:border-gray-500 focus:dark:ring-1 focus:dark:ring-gray-500 focus:dark:outline-none"
                               }
                             )
                           ] })
@@ -2513,8 +2795,8 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
                 {
                   ref: scrollContainerRef,
                   onScroll: handleScroll,
-                  className: "flex-1 min-h-0 overflow-auto",
-                  children: /* @__PURE__ */ jsxs10("table", { className: "w-full border-collapse border-t-0", style: useVirtualScroll ? { tableLayout: "fixed" } : void 0, children: [
+                  className: "flex-1 min-h-0 overflow-auto dark:bg-gray-900",
+                  children: /* @__PURE__ */ jsxs11("table", { className: "w-full border-collapse border-t-0", style: useVirtualScroll ? { tableLayout: "fixed" } : { tableLayout: "fixed", minWidth: tableMinWidth }, children: [
                     /* @__PURE__ */ jsx24("colgroup", { children: displayColumns.map((col) => /* @__PURE__ */ jsx24("col", { style: col.width != null ? { width: col.width, minWidth: col.width } : void 0 }, col.field)) }),
                     /* @__PURE__ */ jsx24(
                       GridBody,
@@ -2536,11 +2818,20 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
                           endIndex: virtualEnd
                         } : void 0,
                         rowDraggable: opts.rowDraggable,
+                        rowDragColumnIndex: rowDragColumnIndex >= 0 ? rowDragColumnIndex : void 0,
+                        onRowReorderDrop: opts.onRowOrderChange ? handleRowReorderDrop : void 0,
                         onDropRows: opts.onDropRows ? handleDropRows : void 0,
-                        onDragOverRows: opts.onDropRows ? handleDragOverRows : void 0,
+                        onDragOverRows: opts.onDropRows || opts.onRowOrderChange ? handleDragOverRows : void 0,
+                        onDragLeaveGrid: opts.onDropRows || opts.onRowOrderChange ? handleDragLeaveGrid : void 0,
+                        dropInsertBeforeIndex,
+                        totalRowCount: totalVirtualRows,
                         multiSelect: opts.multiSelect,
                         onRowClick: opts.multiSelect ? handleMultiSelectRow : void 0,
-                        getRowsForIndices: opts.rowDraggable ? getRowsForIndices : void 0
+                        getRowsForIndices: opts.rowDraggable ? getRowsForIndices : void 0,
+                        isRowLoading: opts.isRowLoading,
+                        getCellClassName: opts.getCellClassName,
+                        onEditingBlur: commitEditingCell,
+                        onEditingChange: opts.editable ? handleEditingChange : void 0
                       }
                     )
                   ] })
@@ -2551,7 +2842,7 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
         )
       }
     ),
-    pagination && !useVirtualScroll && totalPages > 1 && /* @__PURE__ */ jsxs10("div", { className: "flex items-center gap-2 mt-2", children: [
+    pagination && !useVirtualScroll && totalPages > 1 && /* @__PURE__ */ jsxs11("div", { className: "flex items-center gap-2 mt-2", children: [
       /* @__PURE__ */ jsx24(
         Button,
         {
@@ -2563,7 +2854,7 @@ var ExcelGridInner = /* @__PURE__ */ __name(({
           children: "\uC774\uC804"
         }
       ),
-      /* @__PURE__ */ jsxs10("span", { className: "text-sm", children: [
+      /* @__PURE__ */ jsxs11("span", { className: "text-sm", children: [
         currentPage,
         " / ",
         totalPages
@@ -2602,11 +2893,15 @@ var ExcelGrid = /* @__PURE__ */ __name(({
   pinnedRowCount = 0,
   rowDraggable = false,
   onDropRows,
+  onRowOrderChange,
   onAddRow,
+  isRowLoading,
+  getCellClassName,
   exportFileName,
   exportImportDelimiter = ",",
   onImport,
   onChange,
+  onCellChange,
   className,
   style
 }) => /* @__PURE__ */ jsx25(
@@ -2627,11 +2922,15 @@ var ExcelGrid = /* @__PURE__ */ __name(({
     pinnedRowCount,
     rowDraggable,
     onDropRows,
+    onRowOrderChange,
     onAddRow,
+    isRowLoading,
+    getCellClassName,
     exportFileName,
     exportImportDelimiter,
     onImport,
     onChange,
+    onCellChange,
     children: /* @__PURE__ */ jsx25(ExcelGridInner, { className, style })
   }
 ), "ExcelGrid");
