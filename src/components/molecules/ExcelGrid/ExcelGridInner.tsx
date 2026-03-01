@@ -41,6 +41,7 @@ export const ExcelGridInner = ({
   const { store } = opts;
   const [page, setPage] = useState(1);
   const [columnDragIndex, setColumnDragIndex] = useState<number | null>(null);
+  const [columnDropTargetIndex, setColumnDropTargetIndex] = useState<number | null>(null);
   const [dropInsertBeforeIndex, setDropInsertBeforeIndex] = useState<number | null>(null);
 
   const { handleKeyDown, commitEditingCell } = useMemo(
@@ -56,14 +57,6 @@ export const ExcelGridInner = ({
     [store, opts.editable, opts.onChange, opts.onCellChange, opts.getEditingValue]
   );
 
-  const pointerHandlers = useMemo(
-    () =>
-      createPointerHandlers(store, {
-        editable: opts.editable,
-        commitEditingCell,
-      }),
-    [store, opts.editable, commitEditingCell]
-  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const headerScrollRef = useRef<HTMLDivElement>(null);
@@ -106,6 +99,18 @@ export const ExcelGridInner = ({
   }, [displayedRows, pagination, pageSize, currentPage, useVirtualScroll]);
 
   const totalVirtualRows = useVirtualScroll ? displayedRows.length : paginatedRows.length;
+
+  const pointerHandlers = useMemo(
+    () =>
+      createPointerHandlers(store, {
+        editable: opts.editable,
+        commitEditingCell,
+        multiSelect: opts.multiSelect,
+        totalDisplayedRows: totalVirtualRows,
+      }),
+    [store, opts.editable, commitEditingCell, opts.multiSelect, totalVirtualRows]
+  );
+
   const virtualStart = useVirtualScroll
     ? Math.max(0, Math.floor(scrollState.scrollTop / rowHeight))
     : 0;
@@ -211,23 +216,32 @@ export const ExcelGridInner = ({
     [opts.onImport, opts.exportImportDelimiter, displayColumns]
   );
 
-  const handleColumnDragStart = (displayIndex: number) => setColumnDragIndex(displayIndex);
+  const handleColumnDragStart = (displayIndex: number) => {
+    setColumnDragIndex(displayIndex);
+    setColumnDropTargetIndex(displayIndex);
+  };
   const handleColumnDragOver = (e: React.DragEvent, displayIndex: number) => {
     e.preventDefault();
-    if (columnDragIndex == null || columnDragIndex === displayIndex) return;
-    const dataDisplayCols = displayColumns.filter((c) => c.field !== '__checkbox__' && c.field !== '__drag__');
-    const metaCount = (hasDragColumn ? 1 : 0) + (hasCheckboxColumn ? 1 : 0);
-    const from = columnDragIndex - metaCount;
-    const to = displayIndex - metaCount;
-    if (from < 0 || to < 0 || from >= dataDisplayCols.length || to >= dataDisplayCols.length) return;
-    const next = [...dataDisplayCols];
-    const [removed] = next.splice(from, 1);
-    next.splice(to, 0, removed);
-    const newColumnOrder = next.map((c) => dataCols.findIndex((x) => x.field === c.field)).filter((i) => i >= 0);
-    if (newColumnOrder.length === dataCols.length) store.setColumnOrder(newColumnOrder);
-    setColumnDragIndex(displayIndex);
+    if (columnDragIndex == null) return;
+    setColumnDropTargetIndex((prev) => (prev === displayIndex ? prev : displayIndex));
   };
-  const handleColumnDragEnd = () => setColumnDragIndex(null);
+  const handleColumnDragEnd = () => {
+    if (columnDragIndex != null && columnDropTargetIndex != null && columnDragIndex !== columnDropTargetIndex) {
+      const dataDisplayCols = displayColumns.filter((c) => c.field !== '__checkbox__' && c.field !== '__drag__');
+      const metaCount = (hasDragColumn ? 1 : 0) + (hasCheckboxColumn ? 1 : 0);
+      const from = columnDragIndex - metaCount;
+      const to = columnDropTargetIndex - metaCount;
+      if (from >= 0 && to >= 0 && from < dataDisplayCols.length && to < dataDisplayCols.length) {
+        const next = [...dataDisplayCols];
+        const [removed] = next.splice(from, 1);
+        next.splice(to, 0, removed);
+        const newColumnOrder = next.map((c) => dataCols.findIndex((x) => x.field === c.field)).filter((i) => i >= 0);
+        if (newColumnOrder.length === dataCols.length) store.setColumnOrder(newColumnOrder);
+      }
+    }
+    setColumnDragIndex(null);
+    setColumnDropTargetIndex(null);
+  };
 
   const handleDropRows = useCallback(
     (e: React.DragEvent) => {
@@ -558,6 +572,7 @@ export const ExcelGridInner = ({
                 rowDraggable={opts.rowDraggable}
                 rowDragColumnIndex={rowDragColumnIndex >= 0 ? rowDragColumnIndex : undefined}
                 onRowReorderDrop={opts.onRowOrderChange ? handleRowReorderDrop : undefined}
+                onRowReorderDragEnd={opts.onRowOrderChange ? () => setDropInsertBeforeIndex(null) : undefined}
                 onDropRows={opts.onDropRows ? handleDropRows : undefined}
                 onDragOverRows={opts.onDropRows || opts.onRowOrderChange ? handleDragOverRows : undefined}
                 onDragLeaveGrid={opts.onDropRows || opts.onRowOrderChange ? handleDragLeaveGrid : undefined}

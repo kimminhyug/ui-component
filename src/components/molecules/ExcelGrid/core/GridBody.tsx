@@ -25,8 +25,10 @@ export interface GridBodyProps {
   rowDraggable?: boolean;
   /** 행 순서 변경용 드래그 핸들 컬럼(display 인덱스). 있으면 해당 컬럼에 핸들 표시 */
   rowDragColumnIndex?: number;
-  /** 행 드래그로 순서 변경 시 (fromDisplayedIndex, toDisplayedIndex) */
-  onRowReorderDrop?: (fromDisplayedIndex: number, toDisplayedIndex: number) => void;
+  /** 행 드래그로 순서 변경 시 (fromDisplayedIndex, insertBeforeDisplayedIndex) */
+  onRowReorderDrop?: (fromDisplayedIndex: number, insertBeforeDisplayedIndex: number) => void;
+  /** 행 순서 변경 드래그 종료 시 (예상 위치 인디케이터 제거) */
+  onRowReorderDragEnd?: () => void;
   onDropRows?: (e: React.DragEvent) => void;
   onDragOverRows?: (e: React.DragEvent) => void;
   onDragLeaveGrid?: () => void;
@@ -65,6 +67,7 @@ export const GridBody = ({
   rowDraggable,
   rowDragColumnIndex,
   onRowReorderDrop,
+  onRowReorderDragEnd,
   onDropRows,
   onDragOverRows,
   onDragLeaveGrid,
@@ -130,6 +133,7 @@ export const GridBody = ({
             rowDraggable={rowDraggable}
             rowDragColumnIndex={rowDragColumnIndex}
             onRowReorderDrop={onRowReorderDrop}
+            onRowReorderDragEnd={onRowReorderDragEnd}
             rowHeight={virtualScroll?.rowHeight}
             onRowClick={onRowClick ? (e) => onRowClick(rowIndex, e) : undefined}
             getRowsForIndices={getRowsForIndices}

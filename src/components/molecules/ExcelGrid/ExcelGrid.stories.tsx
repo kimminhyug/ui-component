@@ -27,7 +27,7 @@ const meta: Meta<typeof ExcelGrid> = {
     docs: {
       description: {
         component:
-          '**멀티 선택**: 셀을 드래그하면 범위 선택.\n**편집**: `editable` 스토리에서 셀 **더블클릭** 또는 포커스 후 **Enter**로 편집. **Enter**로 저장, **Esc**로 취소.\n**복사/붙여넣기**: 선택 후 **Ctrl+C**, 포커스 위치에서 **Ctrl+V** (탭=열, 줄바꿈=행).',
+          '**셀 선택**: 클릭으로 셀 선택. **Shift+클릭**으로 범위 확장. **Shift+화살표**로 키보드 범위 확장. **드래그**로 셀/행 범위 선택.\n**행 선택** (multiSelect): 클릭(단일), Ctrl+클릭(토글), Shift+클릭(범위), **드래그**로 여러 행 선택.\n**편집**: `editable` 스토리에서 셀 **더블클릭** 또는 포커스 후 **Enter**로 편집. **Enter**로 저장, **Esc**로 취소.\n**복사/붙여넣기**: 선택 후 **Ctrl+C**, 포커스 위치에서 **Ctrl+V** (탭=열, 줄바꿈=행).\n**다크 테마**: 상위에 `class="dark"` 적용 또는 스토리북 툴바에서 Theme → Dark 선택.',
       },
     },
   },
@@ -85,7 +85,7 @@ export const WithCheckbox: Story = {
   },
 };
 
-/** 다중 행 선택: 클릭(단일), Ctrl+클릭(토글), Shift+클릭(범위) */
+/** 다중 행 선택: 클릭(단일), Ctrl+클릭(토글), Shift+클릭(범위), 드래그로 행 범위 선택 */
 export const MultiSelect: Story = {
   args: {
     columns,
@@ -98,7 +98,7 @@ export const MultiSelect: Story = {
     docs: {
       description: {
         story:
-          '클릭: 해당 행만 선택. Ctrl+클릭: 행 선택 추가/해제. Shift+클릭: 이전 선택 행부터 현재 행까지 범위 선택.',
+          '클릭: 해당 행만 선택. Ctrl+클릭: 행 선택 추가/해제. Shift+클릭: 이전 선택 행부터 현재 행까지 범위 선택. 셀을 드래그하면 지나간 행들이 모두 선택됨.',
       },
     },
   },

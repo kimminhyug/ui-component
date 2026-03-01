@@ -1,5 +1,5 @@
 import type { GridStoreApi } from '../state/gridStore';
-import { moveFocusBy } from './selection';
+import { moveFocusBy, extendSelectionBy } from './selection';
 import { getColumnByIndex, getDisplayColumns } from '../model/columnModel';
 import { getCellValue, setCellValue } from '../model/rowModel';
 import { copySelection, pasteAtFocus } from './clipboard';
@@ -91,19 +91,23 @@ export const createKeyDownHandler = (options: KeyboardControllerOptions): KeyDow
     switch (event.key) {
       case 'ArrowUp':
         event.preventDefault();
-        moveFocusBy(store, -1, 0);
+        if (event.shiftKey) extendSelectionBy(store, -1, 0);
+        else moveFocusBy(store, -1, 0);
         return;
       case 'ArrowDown':
         event.preventDefault();
-        moveFocusBy(store, 1, 0);
+        if (event.shiftKey) extendSelectionBy(store, 1, 0);
+        else moveFocusBy(store, 1, 0);
         return;
       case 'ArrowLeft':
         event.preventDefault();
-        moveFocusBy(store, 0, -1);
+        if (event.shiftKey) extendSelectionBy(store, 0, -1);
+        else moveFocusBy(store, 0, -1);
         return;
       case 'ArrowRight':
         event.preventDefault();
-        moveFocusBy(store, 0, 1);
+        if (event.shiftKey) extendSelectionBy(store, 0, 1);
+        else moveFocusBy(store, 0, 1);
         return;
       case 'Enter':
         event.preventDefault();

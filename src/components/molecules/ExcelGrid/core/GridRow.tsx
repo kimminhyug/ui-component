@@ -21,8 +21,10 @@ export interface GridRowProps {
   rowDraggable?: boolean;
   /** 행 순서 변경용 드래그 핸들 컬럼(display 인덱스). 이 컬럼에 핸들 표시 */
   rowDragColumnIndex?: number;
-  /** 행 순서 변경 드롭 시 (fromDisplayedIndex, toDisplayedIndex) */
-  onRowReorderDrop?: (fromDisplayedIndex: number, toDisplayedIndex: number) => void;
+  /** 행 순서 변경 드롭 시 (fromDisplayedIndex, insertBeforeDisplayedIndex) */
+  onRowReorderDrop?: (fromDisplayedIndex: number, insertBeforeDisplayedIndex: number) => void;
+  /** 행 순서 변경 드래그 종료 시 (인디케이터 제거용) */
+  onRowReorderDragEnd?: () => void;
   rowHeight?: number;
   /** multiSelect 시 행 클릭 시 호출 (Ctrl/Shift 클릭 처리) */
   onRowClick?: (e: React.MouseEvent) => void;
@@ -60,6 +62,7 @@ export const GridRow = ({
   rowDraggable,
   rowDragColumnIndex,
   onRowReorderDrop,
+  onRowReorderDragEnd,
   rowHeight,
   onRowClick,
   getRowsForIndices,
@@ -117,7 +120,6 @@ export const GridRow = ({
   const handleRowReorderDragOver = (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes(ROW_REORDER_TYPE) || !onRowReorderDrop) return;
     e.preventDefault();
-    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
   };
 
@@ -128,10 +130,19 @@ export const GridRow = ({
     try {
       const raw = e.dataTransfer.getData(ROW_REORDER_TYPE);
       const { fromDisplayedIndex } = JSON.parse(raw) as { fromDisplayedIndex: number };
-      if (typeof fromDisplayedIndex === 'number') onRowReorderDrop(fromDisplayedIndex, rowIndex);
+      if (typeof fromDisplayedIndex !== 'number') return;
+      const tr = (e.target as HTMLElement).closest('tr');
+      const rect = tr?.getBoundingClientRect();
+      const insertBefore =
+        rect != null && e.clientY < rect.top + rect.height / 2 ? rowIndex : rowIndex + 1;
+      onRowReorderDrop(fromDisplayedIndex, insertBefore);
     } catch {
       // ignore
     }
+  };
+
+  const handleRowReorderDragEnd = () => {
+    onRowReorderDragEnd?.();
   };
 
   const rowStyle: React.CSSProperties = {
@@ -205,7 +216,7 @@ export const GridRow = ({
               onClick={(e) => e.stopPropagation()}
               aria-hidden
             >
-              <span className="inline-flex cursor-grab text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 select-none" title="행 잡아 드래그">⋮⋮</span>
+              <span data-row-drag-handle className="inline-flex cursor-grab text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 select-none" title="행 잡아 드래그">⋮⋮</span>
             </td>
           );
         }
@@ -236,10 +247,12 @@ export const GridRow = ({
               aria-hidden
             >
               <span
+                data-row-drag-handle
                 className="inline-flex cursor-grab text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 select-none"
                 title="행 순서 변경"
                 draggable
                 onDragStart={handleRowReorderDragStart}
+                onDragEnd={handleRowReorderDragEnd}
               >
                 ⋮⋮
               </span>

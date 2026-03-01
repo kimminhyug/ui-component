@@ -3,11 +3,17 @@ import { getColumnByIndex } from '../model/columnModel';
 import { moveFocus, extendSelection } from './selection';
 
 const CELL_SELECTOR = '[data-row][data-col]';
+/** 행 드래그(순서 변경/다른 그리드로 이동) 핸들 — 이 영역에서는 셀 선택/드래그 선택 하지 않음 */
+const ROW_DRAG_HANDLE_SELECTOR = '[data-row-drag-handle]';
 
 export interface MouseControllerOptions {
   editable: boolean;
   /** 다른 셀 클릭 시 현재 편집 셀 커밋 (값 반영 후 편집 모드 해제) */
   commitEditingCell?: () => void;
+  /** 다중 행 선택 시 드래그로 행 범위도 selectedRowIndices에 반영 */
+  multiSelect?: boolean;
+  /** 표시 행 개수 (행 범위 클램프용) */
+  totalDisplayedRows?: number;
 }
 
 const getCellFromEvent = (e: React.PointerEvent): { row: number; col: number } | null => {
@@ -31,10 +37,11 @@ export const createPointerHandlers = (
   let isDragSelecting = false;
 
   const handlePointerDown = (e: React.PointerEvent): void => {
+    if ((e.target as HTMLElement).closest?.(ROW_DRAG_HANDLE_SELECTOR)) return;
     const cell = getCellFromEvent(e);
     if (!cell) return;
     const state = store.getState();
-    const { editingCell } = state;
+    const { editingCell, focusedCell } = state;
     const isClickingOtherCell =
       editingCell && (editingCell.row !== cell.row || editingCell.col !== cell.col);
     if (isClickingOtherCell && options.commitEditingCell) {
@@ -45,6 +52,11 @@ export const createPointerHandlers = (
       return;
     }
     e.preventDefault();
+    if (e.shiftKey && focusedCell) {
+      extendSelection(store, cell.row, cell.col);
+      isDragSelecting = false;
+      return;
+    }
     isDragSelecting = true;
     moveFocus(store, cell.row, cell.col);
   };
@@ -54,6 +66,16 @@ export const createPointerHandlers = (
     const cell = getCellFromEvent(e);
     if (!cell) return;
     extendSelection(store, cell.row, cell.col);
+    if (options.multiSelect && options.totalDisplayedRows != null) {
+      const s = store.getState();
+      const range = s.selectedRange;
+      if (range) {
+        const minR = Math.max(0, Math.min(range.start.row, range.end.row));
+        const maxR = Math.min(options.totalDisplayedRows - 1, Math.max(range.start.row, range.end.row));
+        const indices = Array.from({ length: maxR - minR + 1 }, (_, i) => minR + i);
+        store.setSelectedRowIndices(indices);
+      }
+    }
   };
 
   const handlePointerUp = (): void => {

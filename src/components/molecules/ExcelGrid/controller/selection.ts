@@ -43,3 +43,22 @@ export const moveFocusBy = (store: GridStoreApi, dRow: number, dCol: number): Ce
   moveFocus(store, r, c);
   return { row: r, col: c };
 };
+
+/** Shift+화살표: 선택 영역만 확장 (anchor 유지, end만 이동) */
+export const extendSelectionBy = (store: GridStoreApi, dRow: number, dCol: number): CellCoord | null => {
+  const state = store.getState();
+  const focus = state.focusedCell;
+  const range = state.selectedRange;
+  const rows = state.rows;
+  const cols = state.columns;
+  if (!focus || rows.length === 0 || cols.length === 0) return null;
+  const anchor = range ? range.start : focus;
+  const endRow = clampRowIndex(rows, focus.row + dRow);
+  const endCol = clampCol(cols, focus.col + dCol);
+  const newEnd = { row: endRow, col: endCol };
+  store.setState({
+    focusedCell: newEnd,
+    selectedRange: { start: anchor, end: newEnd },
+  });
+  return newEnd;
+};
